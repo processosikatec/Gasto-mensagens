@@ -1,0 +1,115 @@
+import type { ServiceInfo, TemplateMix, Volume } from "./digisac";
+import type { CostBreakdown } from "./costing";
+
+export type { Volume, TemplateMix, CostBreakdown };
+
+export type MonthRow = {
+  month: string; // "YYYY-MM"
+  label: string; // "Ago/26"
+  partial: boolean;
+  elapsedRatio: number;
+  volume: Volume;
+  cost: CostBreakdown;
+  /** custo do mês se a regra de serviço (01/10/2026) já valesse */
+  costIfRule: number;
+  /** só preenchido no mês corrente: fechamento projetado */
+  projectedVolume: Volume | null;
+  projectedCost: CostBreakdown | null;
+  projectedCostIfRule: number | null;
+};
+
+/** Mês futuro projetado (volume estimado + custo pela regra vigente naquele mês). */
+export type ForecastRow = {
+  month: string; // "YYYY-MM"
+  label: string; // "Out/26"
+  volume: Volume; // cenário-base
+  volumeLow: Volume;
+  volumeHigh: Volume;
+  cost: CostBreakdown; // custo do cenário-base (regra vigente no mês)
+  costLow: number;
+  costHigh: number;
+  /** custo do mês sempre cobrando o serviço (comparação) */
+  costIfRule: number;
+  /** custo do mês se a conexão fosse oficial (WABA), forçando serviço cobrado */
+  costAsOfficial: number;
+  serviceCharged: boolean; // a regra de serviço já vale nesse mês?
+};
+
+export type ConnectionOption = {
+  id: string;
+  name: string;
+  kind: string;
+  connected: boolean;
+};
+
+export type DashboardPayload = {
+  generatedAt: string;
+  filters: {
+    type: "todas" | "oficial" | "standard";
+    connectionId: string | null; // null = todas do tipo
+    availableConnections: ConnectionOption[];
+    consideredCount: number; // conexões efetivamente consultadas
+    isOfficial: boolean; // seleção gera custo?
+  };
+  pricing: {
+    serviceRateBrl: number;
+    marketingRateBrl: number;
+    serviceRateUsd: number;
+    marketingRateUsd: number;
+    source: string;
+    asOf: string;
+    sourceUrl?: string;
+    note: string;
+  };
+  fx: { rate: number; source: string; asOf: string };
+  ruleStartsAt: string; // "2026-10-01"
+  ruleActiveNow: boolean;
+  /** custo do mês corrente somando TODAS as conexões oficiais — não muda com filtros */
+  monthGlobal: {
+    month: string;
+    label: string;
+    officialConnections: number;
+    costNow: number;
+    costProjected: number;
+    /** fechamento do mês simulando a regra de serviço já ativa */
+    costProjectedIfRuleActive: number;
+    elapsedRatio: number;
+  };
+  currentMonth: MonthRow;
+  history: MonthRow[]; // meses anteriores + currentMonth como último item
+  /** meses futuros projetados (a partir do mês seguinte ao corrente) */
+  forecast: ForecastRow[];
+  forecastMethod: string;
+  /** tendência de mensagens enviadas por mês (positiva = crescendo) */
+  forecastSlopeSent: number;
+  /** quantos meses de histórico entraram no cálculo */
+  forecastMonthsUsed: number;
+  /** ajuste sazonal por mês do ano foi aplicado? */
+  forecastSeasonality: boolean;
+  /** custo mensal médio projetado depois que a regra de serviço entra (01/10/2026) */
+  costAfterRuleBrl: number;
+  /** custo mensal médio otimista/pessimista depois da regra */
+  costAfterRuleLowBrl: number;
+  costAfterRuleHighBrl: number;
+  /** custo mensal médio projetado se a seleção fosse oficial (relevante p/ filtro Standard) */
+  costAfterRuleIfOfficialBrl: number;
+  indicators: {
+    // "Este mês" — realizado até agora
+    monthSentTotal: number; // enviadas (todas)
+    monthSent: number; // enviadas de serviço (livre, sem template)
+    monthReceived: number;
+    monthCostNow: number;
+    // "Estimativa deste mês" — fechamento projetado
+    monthProjectedSent: number;
+    monthProjectedReceived: number;
+    monthProjectedCost: number;
+    // simulação: mês atual como se a regra de serviço (01/10/2026) já valesse
+    monthCostIfRuleActive: number; // custo realizado até agora, cobrando o serviço
+    monthProjectedCostIfRuleActive: number; // fechamento estimado, cobrando o serviço
+    // simulação: conexão(ões) Standard como se fossem oficiais (WABA), serviço sempre cobrado
+    monthCostIfOfficial: number;
+    monthProjectedCostIfOfficial: number;
+  };
+};
+
+export type { ServiceInfo };
