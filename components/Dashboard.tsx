@@ -204,10 +204,12 @@ export default function Dashboard() {
           <section className="block">
             <h2>Volume e custo — histórico e projeção</h2>
             <p className="hint">
-              Barras: mensagens enviadas por mês — 3 meses reais e {data.forecast.length} projetados
+              Barras: mensagens enviadas por mês — azul escuro é realizado, azul claro é projeção
               ({data.forecastMonthsUsed} meses de base
-              {data.forecastSeasonality ? ", com ajuste sazonal" : ""}). Linha cheia = custo real;
-              linha pontilhada = custo se a regra da Meta já valesse. Eixo de custo à direita.
+              {data.forecastSeasonality ? ", com ajuste sazonal" : ""}). Linha{" "}
+              <b style={{ color: "#db2727" }}>vermelha</b> = custo hoje, com as regras vigentes;
+              linha <b style={{ color: "#c48b0a" }}>âmbar</b> = custo simulado se a mensagem de
+              serviço já fosse cobrada. Eixo de custo à direita.
             </p>
             <div className="panel">
               <VolumeChart data={data} />

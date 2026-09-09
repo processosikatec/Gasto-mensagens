@@ -3,7 +3,6 @@
 import {
   Area,
   Bar,
-  Cell,
   CartesianGrid,
   ComposedChart,
   LabelList,
@@ -26,11 +25,33 @@ const BRL0 = new Intl.NumberFormat("pt-BR", {
 });
 const kNum = (v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v));
 
+function renderBarLabel(props: any, rows: any[]) {
+  const { x, y, width, value, index } = props;
+  if (value == null) return null;
+  const row = rows[index];
+  if (!row) return null;
+  return (
+    <text
+      x={x + width / 2}
+      y={y - 5}
+      textAnchor="middle"
+      fontSize={9}
+      fontFamily="'IBM Plex Mono', monospace"
+      fill="#586171"
+    >
+      {kNum(value)}
+    </text>
+  );
+}
+
 /**
  * Uma barra de volume por mês (3 reais + 5 projetados, azul claro na projeção).
- * Duas linhas no eixo de custo (direita):
- *   - custo real: sólida no histórico, tracejada no futuro;
- *   - custo "se a regra da Meta já valesse": pontilhada, em todos os meses.
+ * Duas linhas no eixo de custo (direita), com cores distintas para não se
+ * confundirem na legenda:
+ *   - vermelho "Custo hoje": o que realmente se paga com as regras vigentes
+ *     (sólido no histórico, tracejado na parte projetada);
+ *   - âmbar "Custo com a regra da Meta": simulação do mesmo volume cobrando
+ *     a mensagem de serviço, em todos os meses.
  */
 export default function VolumeChart({ data }: { data: DashboardPayload }) {
   const ruleMonth = data.ruleStartsAt.slice(0, 7);
@@ -41,7 +62,8 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
     return {
       label: h.label,
       month: h.month,
-      enviadas,
+      realizado: projected ? null : enviadas,
+      projecao: projected ? enviadas : null,
       isProjection: projected,
       custo: projected ? h.projectedCost?.total ?? h.cost.total : h.cost.total,
       custoFut: null as number | null,
@@ -54,7 +76,8 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
   const fc = data.forecast.map((f) => ({
     label: f.label,
     month: f.month,
-    enviadas: f.volume.sent,
+    realizado: null as number | null,
+    projecao: f.volume.sent,
     isProjection: true,
     custo: null as number | null,
     custoFut: f.cost.total,
@@ -63,11 +86,11 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
   }));
 
   const rows = [...hist, ...fc];
-  // conecta a linha de custo projetado ao último ponto real
+  // conecta a linha de custo projetado e a faixa ao último ponto real
   const lastReal = [...hist].reverse().find((r) => !r.isProjection);
   if (lastReal) {
     lastReal.custoFut = lastReal.custo;
-    lastReal.faixa = [lastReal.enviadas, lastReal.enviadas];
+    lastReal.faixa = [lastReal.realizado ?? 0, lastReal.realizado ?? 0];
   }
 
   const ruleLabel = rows.find((r) => r.month === ruleMonth)?.label;
@@ -142,36 +165,48 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
             legendType="none"
           />
 
-          <Bar yAxisId="vol" dataKey="enviadas" name="Enviadas" maxBarSize={34} radius={[3, 3, 0, 0]}>
-            {rows.map((r, i) => (
-              <Cell key={i} fill={r.isProjection ? SERIES.projected : SERIES.service} />
-            ))}
+          <Bar
+            yAxisId="vol"
+            dataKey="realizado"
+            name="Enviadas (realizado)"
+            fill={SERIES.service}
+            stackId="vol"
+            maxBarSize={34}
+            radius={[3, 3, 0, 0]}
+          >
             <LabelList
-              dataKey="enviadas"
-              content={(props: any) => {
-                const { x, y, width, index } = props;
-                const row = rows[index];
-                if (!row) return null;
-                return (
-                  <text
-                    x={x + width / 2}
-                    y={y - 5}
-                    textAnchor="middle"
-                    fontSize={9}
-                    fontFamily="'IBM Plex Mono', monospace"
-                    fill={C.dim}
-                  >
-                    {kNum(row.enviadas)}
-                  </text>
-                );
-              }}
+              dataKey="realizado"
+              content={(props: any) => renderBarLabel(props, rows)}
+            />
+          </Bar>
+          <Bar
+            yAxisId="vol"
+            dataKey="projecao"
+            name="Enviadas (projeção)"
+            fill={SERIES.projected}
+            stackId="vol"
+            maxBarSize={34}
+            radius={[3, 3, 0, 0]}
+          >
+            <LabelList
+              dataKey="projecao"
+              content={(props: any) => renderBarLabel(props, rows)}
             />
           </Bar>
 
           <Line
             yAxisId="cost"
+            dataKey="custoRegra"
+            name="Custo com a regra da Meta"
+            stroke={SERIES.costRule}
+            strokeWidth={2}
+            dot={false}
+            connectNulls
+          />
+          <Line
+            yAxisId="cost"
             dataKey="custo"
-            name="Custo real"
+            name="Custo hoje"
             stroke={SERIES.cost}
             strokeWidth={2.5}
             dot={false}
@@ -180,22 +215,10 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
           <Line
             yAxisId="cost"
             dataKey="custoFut"
-            name="Custo projetado"
+            name="Custo hoje (projetado)"
             stroke={SERIES.cost}
             strokeWidth={2}
             strokeDasharray="5 4"
-            dot={false}
-            connectNulls
-            legendType="none"
-          />
-          <Line
-            yAxisId="cost"
-            dataKey="custoRegra"
-            name="Custo se a regra valesse"
-            stroke={SERIES.cost}
-            strokeWidth={1.5}
-            strokeDasharray="1 3"
-            strokeOpacity={0.75}
             dot={false}
             connectNulls
           />

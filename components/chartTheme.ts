@@ -31,14 +31,15 @@ export const C = {
   },
 };
 
-// Séries (fixas — azul Nebula em tons + danger p/ custo)
+// Séries (fixas — cada uma com identidade própria, sem repetir tom/cor entre si)
 export const SERIES = {
-  service: "#4679ca", // primary-600
+  service: "#4679ca", // primary-600 — volume realizado
   template: "#7ab0e0", // primary-400
   campaign: "#324b7d", // primary-900
   received: "#8c97a4", // neutral-400 (linha)
-  cost: "#db2727", // danger-600 (linha, eixo direito)
-  projected: "#a5cbeb", // primary-300 (segmento projetado)
+  projected: "#a5cbeb", // primary-300 — barras de projeção de volume
+  cost: "#db2727", // danger-600 — custo real (hoje)
+  costRule: "#c48b0a", // warning-600 — custo simulado "se a regra valesse"
 };
 
 export const AXIS = {
