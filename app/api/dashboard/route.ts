@@ -5,18 +5,18 @@ import {
   averageMix,
   costOf,
   nextMonths,
+  projectTrend,
   projectVolume,
   RULE_STARTS_AT,
   ruleActiveAt,
   type Rates,
 } from "@/lib/costing";
-import { baseVolume, boundVolume, forecastVolumes } from "@/lib/forecast";
 import type { DashboardPayload, ForecastRow, MonthRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const CALC_MONTHS = 24; // histórico usado no cálculo da projeção (2 ciclos anuais)
+const CALC_MONTHS = 12; // histórico usado para calcular a tendência da projeção
 const VIEW_MONTHS = 3; // meses reais mostrados no front
 const FORECAST_HORIZON = 5; // meses projetados mostrados no front
 
@@ -207,54 +207,41 @@ export async function GET(req: Request) {
       true,
     );
 
-    // ---- projeção: regressão + sazonalidade sobre TODOS os meses completos ----
+    // ---- projeção: tendência linear (mínimos quadrados) sobre os últimos meses
+    // completos — cada mês projetado tem seu próprio valor, sem sazonalidade ----
     const completeBuckets = buckets.filter((b) => !b.partial);
+    const forecastBase = completeBuckets.slice(-CALC_MONTHS);
+    const forecastVolumes = projectTrend(
+      forecastBase.map((b) => b.volume),
+      FORECAST_HORIZON,
+    );
+    // mix de categoria: média dos meses usados na base (estável, categoria não tem tendência clara)
+    const forecastMix = averageMix(forecastBase.map((b) => b.templateMix));
     const forecastMonths = nextMonths(current.month, FORECAST_HORIZON);
-    const fc = forecastVolumes(
-      completeBuckets.map((b) => b.volume),
-      completeBuckets.map((b) => b.month),
-      forecastMonths,
-    );
-    // mix de categoria: média dos 3 meses completos mais recentes
-    const forecastMix = averageMix(
-      completeBuckets.slice(-3).map((b) => b.templateMix),
-    );
-    const forecast: ForecastRow[] = fc.months.map((pv, i) => {
-      const m = forecastMonths[i];
+
+    const forecast: ForecastRow[] = forecastMonths.map((m, i) => {
       const serviceCharged = ruleActiveAt(`${m}-15`);
-      const vBase = baseVolume(pv);
-      const vLow = boundVolume(pv, "low");
-      const vHigh = boundVolume(pv, "high");
+      const v = forecastVolumes[i];
       return {
         month: m,
         label: label(m),
-        volume: vBase,
-        volumeLow: vLow,
-        volumeHigh: vHigh,
-        cost: costOf(vBase, forecastMix, rates, isOfficial, serviceCharged),
-        costLow: costOf(vLow, forecastMix, rates, isOfficial, serviceCharged).total,
-        costHigh: costOf(vHigh, forecastMix, rates, isOfficial, serviceCharged).total,
-        costIfRule: costOf(vBase, forecastMix, rates, isOfficial, true).total,
-        costAsOfficial: costOf(vBase, forecastMix, rates, true, true).total,
+        volume: v,
+        cost: costOf(v, forecastMix, rates, isOfficial, serviceCharged),
+        costIfRule: costOf(v, forecastMix, rates, isOfficial, true).total,
+        costAsOfficial: costOf(v, forecastMix, rates, true, true).total,
         serviceCharged,
       };
     });
 
-    const forecastMethod = fc.method;
+    const forecastMethod = `Tendência linear sobre os últimos ${forecastBase.length} meses completos — cada mês projetado segue o ritmo de crescimento ou queda observado, sem sazonalidade.`;
 
-    // custo mensal médio depois que a regra de serviço entra
+    // custo mensal médio dos meses já cobrados pela regra (cada mês tem valor próprio)
     const charged = forecast.filter((f) => f.serviceCharged);
     const avg = (xs: number[]) =>
       xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
     const costAfterRuleBrl = charged.length
       ? avg(charged.map((f) => f.cost.total))
       : forecast[0]?.cost.total ?? 0;
-    const costAfterRuleLowBrl = charged.length
-      ? avg(charged.map((f) => f.costLow))
-      : forecast[0]?.costLow ?? 0;
-    const costAfterRuleHighBrl = charged.length
-      ? avg(charged.map((f) => f.costHigh))
-      : forecast[0]?.costHigh ?? 0;
     // média mensal projetada como se fosse oficial (relevante só para o filtro Standard)
     const costAsOfficialAvgBrl = avg(forecast.map((f) => f.costAsOfficial));
 
@@ -316,12 +303,8 @@ export async function GET(req: Request) {
       history,
       forecast,
       forecastMethod,
-      forecastSlopeSent: fc.slopePerMonthSent,
-      forecastMonthsUsed: fc.monthsUsed,
-      forecastSeasonality: fc.seasonalityApplied,
+      forecastMonthsUsed: forecastBase.length,
       costAfterRuleBrl,
-      costAfterRuleLowBrl,
-      costAfterRuleHighBrl,
       costAfterRuleIfOfficialBrl: costAsOfficialAvgBrl,
       indicators,
     };

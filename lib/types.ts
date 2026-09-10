@@ -18,16 +18,16 @@ export type MonthRow = {
   projectedCostIfRule: number | null;
 };
 
-/** Mês futuro projetado (volume estimado + custo pela regra vigente naquele mês). */
+/**
+ * Mês futuro projetado. O volume é fixo — média dos últimos meses completos,
+ * repetida igual em todos os meses do horizonte — só o custo varia conforme a
+ * regra de serviço já valha ou não naquele mês.
+ */
 export type ForecastRow = {
   month: string; // "YYYY-MM"
   label: string; // "Out/26"
-  volume: Volume; // cenário-base
-  volumeLow: Volume;
-  volumeHigh: Volume;
-  cost: CostBreakdown; // custo do cenário-base (regra vigente no mês)
-  costLow: number;
-  costHigh: number;
+  volume: Volume; // fixo, igual em todos os meses do horizonte
+  cost: CostBreakdown; // custo com a regra vigente naquele mês
   /** custo do mês sempre cobrando o serviço (comparação) */
   costIfRule: number;
   /** custo do mês se a conexão fosse oficial (WABA), forçando serviço cobrado */
@@ -77,21 +77,14 @@ export type DashboardPayload = {
   };
   currentMonth: MonthRow;
   history: MonthRow[]; // meses anteriores + currentMonth como último item
-  /** meses futuros projetados (a partir do mês seguinte ao corrente) */
+  /** meses futuros projetados (a partir do mês seguinte ao corrente) — volume fixo */
   forecast: ForecastRow[];
   forecastMethod: string;
-  /** tendência de mensagens enviadas por mês (positiva = crescendo) */
-  forecastSlopeSent: number;
-  /** quantos meses de histórico entraram no cálculo */
+  /** quantos meses de histórico entraram na média fixa */
   forecastMonthsUsed: number;
-  /** ajuste sazonal por mês do ano foi aplicado? */
-  forecastSeasonality: boolean;
-  /** custo mensal médio projetado depois que a regra de serviço entra (01/10/2026) */
+  /** custo mensal projetado depois que a regra de serviço entra (01/10/2026) */
   costAfterRuleBrl: number;
-  /** custo mensal médio otimista/pessimista depois da regra */
-  costAfterRuleLowBrl: number;
-  costAfterRuleHighBrl: number;
-  /** custo mensal médio projetado se a seleção fosse oficial (relevante p/ filtro Standard) */
+  /** custo mensal projetado se a seleção fosse oficial (relevante p/ filtro Standard) */
   costAfterRuleIfOfficialBrl: number;
   indicators: {
     // "Este mês" — realizado até agora

@@ -135,3 +135,51 @@ export function nextMonths(fromMonth: string, n: number): string[] {
   }
   return out;
 }
+
+/** Reta de mínimos quadrados sobre uma série (índice 0..n-1 como eixo x). */
+function linreg(ys: number[]): { slope: number; intercept: number } {
+  const n = ys.length;
+  if (n < 2) return { slope: 0, intercept: ys[0] ?? 0 };
+  const sx = ((n - 1) * n) / 2;
+  const sy = ys.reduce((a, b) => a + b, 0);
+  const sxy = ys.reduce((a, y, i) => a + i * y, 0);
+  const sxx = ys.reduce((a, _, i) => a + i * i, 0);
+  const d = n * sxx - sx * sx;
+  if (d === 0) return { slope: 0, intercept: sy / n };
+  const slope = (n * sxy - sx * sy) / d;
+  const intercept = (sy - slope * sx) / n;
+  return { slope, intercept };
+}
+
+/**
+ * Projeta cada campo de `Volume` `horizon` meses à frente por regressão linear
+ * simples (mínimos quadrados) sobre o histórico — sem sazonalidade, sem banda
+ * de incerteza. Cada mês projetado tem seu próprio valor, seguindo a tendência
+ * (crescimento/queda) observada nos últimos meses. Nunca projeta abaixo de 0.
+ */
+export function projectTrend(history: Volume[], horizon: number): Volume[] {
+  const fields: (keyof Volume)[] = [
+    "sent",
+    "received",
+    "service",
+    "campaignFreeform",
+    "template",
+    "campaignTemplate",
+  ];
+  const n = history.length;
+  const models = Object.fromEntries(
+    fields.map((f) => [f, linreg(history.map((v) => v[f]))]),
+  ) as Record<keyof Volume, { slope: number; intercept: number }>;
+
+  const out: Volume[] = [];
+  for (let k = 1; k <= horizon; k++) {
+    const idx = n - 1 + k;
+    const row = {} as Volume;
+    for (const f of fields) {
+      const { slope, intercept } = models[f];
+      row[f] = Math.max(0, Math.round(intercept + slope * idx));
+    }
+    out.push(row);
+  }
+  return out;
+}

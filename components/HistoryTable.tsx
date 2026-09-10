@@ -49,15 +49,9 @@ export default function HistoryTable({ data }: { data: DashboardPayload }) {
             <td>{n(f.volume.sent)}</td>
             <td>{n(f.volume.received)}</td>
             <td>—</td>
-            <td>
-              {n(f.volumeLow.sent)} – {n(f.volumeHigh.sent)}
-            </td>
+            <td>{n(f.volume.sent)}</td>
             <td>
               {r(f.cost.total)}
-              <span className="range">
-                {" "}
-                ({r(f.costLow)} – {r(f.costHigh)})
-              </span>
               {!f.serviceCharged && f.cost.total > 0 ? " · só templates" : ""}
             </td>
           </tr>

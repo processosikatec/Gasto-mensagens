@@ -31,7 +31,10 @@ export const C = {
   },
 };
 
-// Séries (fixas — cada uma com identidade própria, sem repetir tom/cor entre si)
+// Séries (fixas — cada uma com identidade própria, sem repetir tom/cor entre si).
+// As 3 linhas de custo usam cores bem distintas para não se confundirem:
+// vermelho = custo real de hoje, roxo = custo projetado, âmbar = simulação
+// "se a regra da Meta já valesse".
 export const SERIES = {
   service: "#4679ca", // primary-600 — volume realizado
   template: "#7ab0e0", // primary-400
@@ -39,6 +42,7 @@ export const SERIES = {
   received: "#8c97a4", // neutral-400 (linha)
   projected: "#a5cbeb", // primary-300 — barras de projeção de volume
   cost: "#db2727", // danger-600 — custo real (hoje)
+  costForecast: "#7c3aed", // violet-600 — custo projetado (meses futuros)
   costRule: "#c48b0a", // warning-600 — custo simulado "se a regra valesse"
 };
 

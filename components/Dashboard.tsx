@@ -190,12 +190,12 @@ export default function Dashboard() {
             />
             <InfoCard
               accent="danger"
-              label={`Custo médio a partir de ${cap(fmtMonthLabel(data.ruleStartsAt.slice(0, 7)))}`}
+              label={`Custo projetado a partir de ${cap(fmtMonthLabel(data.ruleStartsAt.slice(0, 7)))}`}
               value={brl(data.costAfterRuleBrl)}
-              sub={`Faixa ${brl(data.costAfterRuleLowBrl)} – ${brl(data.costAfterRuleHighBrl)}`}
+              sub={`Média dos ${data.forecast.length} meses projetados · base ${data.forecastMonthsUsed} meses`}
               info={
                 data.forecastMethod +
-                ` Média mensal dos ${data.forecast.length} meses projetados, já com a mensagem de serviço cobrada.`
+                " Já considera a mensagem de serviço cobrada a partir de 01/10/2026."
               }
             />
           </div>
@@ -205,11 +205,11 @@ export default function Dashboard() {
             <h2>Volume e custo — histórico e projeção</h2>
             <p className="hint">
               Barras: mensagens enviadas por mês — azul escuro é realizado, azul claro é projeção
-              ({data.forecastMonthsUsed} meses de base
-              {data.forecastSeasonality ? ", com ajuste sazonal" : ""}). Linha{" "}
-              <b style={{ color: "#db2727" }}>vermelha</b> = custo hoje, com as regras vigentes;
-              linha <b style={{ color: "#c48b0a" }}>âmbar</b> = custo simulado se a mensagem de
-              serviço já fosse cobrada. Eixo de custo à direita.
+              (tendência dos últimos {data.forecastMonthsUsed} meses, um valor por mês). Linha{" "}
+              <b style={{ color: "#db2727" }}>vermelha</b> = custo real de hoje; linha{" "}
+              <b style={{ color: "#7c3aed" }}>roxa</b> = custo projetado para os meses futuros;
+              linha <b style={{ color: "#c48b0a" }}>âmbar</b> = simulação de custo se a mensagem
+              de serviço já fosse cobrada. Eixo de custo à direita.
             </p>
             <div className="panel">
               <VolumeChart data={data} />

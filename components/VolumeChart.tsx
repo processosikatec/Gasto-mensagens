@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Area,
   Bar,
   CartesianGrid,
   ComposedChart,
@@ -45,13 +44,13 @@ function renderBarLabel(props: any, rows: any[]) {
 }
 
 /**
- * Uma barra de volume por mês (3 reais + 5 projetados, azul claro na projeção).
- * Duas linhas no eixo de custo (direita), com cores distintas para não se
- * confundirem na legenda:
- *   - vermelho "Custo hoje": o que realmente se paga com as regras vigentes
- *     (sólido no histórico, tracejado na parte projetada);
+ * Uma barra de volume por mês (3 reais + 5 projetados, azul claro na projeção —
+ * a projeção segue a tendência linear dos últimos meses, um valor por mês).
+ * Três linhas no eixo de custo (direita), cada uma com cor própria:
+ *   - vermelho "Custo hoje": o que realmente se paga com as regras vigentes;
+ *   - roxo "Custo projetado": continuação da linha vermelha nos meses futuros;
  *   - âmbar "Custo com a regra da Meta": simulação do mesmo volume cobrando
- *     a mensagem de serviço, em todos os meses.
+ *     a mensagem de serviço, em todos os meses (passados e futuros).
  */
 export default function VolumeChart({ data }: { data: DashboardPayload }) {
   const ruleMonth = data.ruleStartsAt.slice(0, 7);
@@ -69,7 +68,6 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
       custoFut: null as number | null,
       custoRegra:
         projected && h.projectedCostIfRule != null ? h.projectedCostIfRule : h.costIfRule,
-      faixa: null as [number, number] | null,
     };
   });
 
@@ -82,15 +80,13 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
     custo: null as number | null,
     custoFut: f.cost.total,
     custoRegra: f.costIfRule,
-    faixa: [f.volumeLow.sent, f.volumeHigh.sent] as [number, number],
   }));
 
   const rows = [...hist, ...fc];
-  // conecta a linha de custo projetado e a faixa ao último ponto real
+  // conecta a linha de custo projetado ao último ponto real
   const lastReal = [...hist].reverse().find((r) => !r.isProjection);
   if (lastReal) {
     lastReal.custoFut = lastReal.custo;
-    lastReal.faixa = [lastReal.realizado ?? 0, lastReal.realizado ?? 0];
   }
 
   const ruleLabel = rows.find((r) => r.month === ruleMonth)?.label;
@@ -126,8 +122,7 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
           <Tooltip
             contentStyle={tooltipStyle}
             labelStyle={{ color: C.dim }}
-            formatter={(v: any, name: any, item: any) => {
-              if (item?.dataKey === "faixa" || Array.isArray(v)) return null;
+            formatter={(v: any, name: any) => {
               if (v == null) return null;
               return String(name).toLowerCase().includes("custo")
                 ? [BRL0.format(v), name]
@@ -153,17 +148,6 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
               }}
             />
           )}
-
-          <Area
-            yAxisId="vol"
-            dataKey="faixa"
-            stroke="none"
-            fill={SERIES.service}
-            fillOpacity={0.12}
-            connectNulls
-            activeDot={false}
-            legendType="none"
-          />
 
           <Bar
             yAxisId="vol"
@@ -215,9 +199,9 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
           <Line
             yAxisId="cost"
             dataKey="custoFut"
-            name="Custo hoje (projetado)"
-            stroke={SERIES.cost}
-            strokeWidth={2}
+            name="Custo projetado"
+            stroke={SERIES.costForecast}
+            strokeWidth={2.5}
             strokeDasharray="5 4"
             dot={false}
             connectNulls
