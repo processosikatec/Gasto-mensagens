@@ -9,9 +9,10 @@ const r = (x: number) => BRL.format(x || 0);
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 /**
- * Tabela mensal: Mês | Enviadas | Recebidas | Volume Atual | Projeção | Custo.
- * Meses passados: valores realizados. Mês corrente: realizado → fechamento
- * estimado. Meses futuros: volume e custo projetados (linha marcada).
+ * Tabela mensal: Mês | Enviadas | Recebidas | Projeção | Custo.
+ * Meses passados: valores realizados. Mês corrente: Enviadas = realizado até
+ * agora, Projeção = fechamento estimado do mês, Custo = realizado → estimado.
+ * Meses futuros: volume e custo projetados (linha marcada).
  */
 export default function HistoryTable({ data }: { data: DashboardPayload }) {
   const rows = data.history;
@@ -25,7 +26,6 @@ export default function HistoryTable({ data }: { data: DashboardPayload }) {
           <th>Mês</th>
           <th>Enviadas</th>
           <th>Recebidas</th>
-          <th>Volume atual</th>
           <th>Projeção</th>
           <th>Custo</th>
         </tr>
@@ -36,7 +36,6 @@ export default function HistoryTable({ data }: { data: DashboardPayload }) {
             <td>{cap(h.label)}</td>
             <td className="strong">{n(h.volume.sent)}</td>
             <td>{n(h.volume.received)}</td>
-            <td>{n(h.volume.sent)}</td>
             <td>{h.projectedVolume ? n(h.projectedVolume.sent) : "—"}</td>
             <td className="strong">
               {h.projectedCost ? `${r(h.cost.total)} → ${r(h.projectedCost.total)}` : r(h.cost.total)}
@@ -48,7 +47,6 @@ export default function HistoryTable({ data }: { data: DashboardPayload }) {
             <td>{cap(f.label)} · Projeção</td>
             <td>{n(f.volume.sent)}</td>
             <td>{n(f.volume.received)}</td>
-            <td>—</td>
             <td>{n(f.volume.sent)}</td>
             <td>
               {r(f.cost.total)}
@@ -62,7 +60,7 @@ export default function HistoryTable({ data }: { data: DashboardPayload }) {
           <td>Total (meses completos)</td>
           <td>{n(sum((h) => h.volume.sent))}</td>
           <td>{n(sum((h) => h.volume.received))}</td>
-          <td colSpan={2}></td>
+          <td></td>
           <td>{r(sum((h) => h.cost.total))}</td>
         </tr>
       </tfoot>
