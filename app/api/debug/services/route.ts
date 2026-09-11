@@ -1,13 +1,22 @@
 import { NextResponse } from "next/server";
 import { classifyService, fetchServicesRaw } from "@/lib/digisac";
+import { getCredsFromRequest } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 // Debug: lista as conexões da conta com o tipo e a classificação aplicada,
 // pra conferir quais entram como "API oficial da Meta".
-export async function GET() {
+export async function GET(req: Request) {
+  const creds = getCredsFromRequest(req);
+  if (!creds) {
+    return NextResponse.json(
+      { error: "Sessão expirada ou inválida. Faça login novamente." },
+      { status: 401 },
+    );
+  }
+
   try {
-    const raw = await fetchServicesRaw();
+    const raw = await fetchServicesRaw(creds);
     const rows = raw.map((s) => ({
       name: s.name,
       type: s.type,

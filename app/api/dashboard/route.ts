@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchHistory, fetchMonth, fetchServices, monthsBack } from "@/lib/digisac";
 import { getMetaPricing, getUsdBrl } from "@/lib/meta-pricing";
+import { getCredsFromRequest } from "@/lib/session";
 import {
   averageMix,
   costOf,
@@ -9,6 +10,7 @@ import {
   projectVolume,
   RULE_STARTS_AT,
   ruleActiveAt,
+  templateByCategory,
   type Rates,
 } from "@/lib/costing";
 import type { DashboardPayload, ForecastRow, MonthRow } from "@/lib/types";
@@ -29,6 +31,14 @@ function label(month: string): string {
 type FilterType = "todas" | "oficial" | "standard";
 
 export async function GET(req: Request) {
+  const creds = getCredsFromRequest(req);
+  if (!creds) {
+    return NextResponse.json(
+      { error: "Sessão expirada ou inválida. Faça login novamente." },
+      { status: 401 },
+    );
+  }
+
   const url = new URL(req.url);
   const type: FilterType =
     url.searchParams.get("type") === "standard"
@@ -44,7 +54,7 @@ export async function GET(req: Request) {
 
   try {
     const [services, pricing, fx] = await Promise.all([
-      fetchServices().catch(() => []),
+      fetchServices(creds).catch(() => []),
       getMetaPricing(),
       getUsdBrl(),
     ]);
@@ -91,8 +101,8 @@ export async function GET(req: Request) {
     const months = monthsBack(CALC_MONTHS, nowIso);
 
     const [buckets, globalBucket] = await Promise.all([
-      fetchHistory(months, serviceIds, nowIso),
-      fetchMonth(currMonth, allOfficialIds, nowIso),
+      fetchHistory(creds, months, serviceIds, nowIso),
+      fetchMonth(creds, currMonth, allOfficialIds, nowIso),
     ]);
 
     const serviceChargedNow = ruleActiveAt(nowIso.slice(0, 10));
@@ -159,6 +169,7 @@ export async function GET(req: Request) {
         volume: b.volume,
         cost,
         costIfRule,
+        templateByCategory: templateByCategory(b.volume, b.templateMix),
         projectedVolume,
         projectedCost,
         projectedCostIfRule,
@@ -229,6 +240,7 @@ export async function GET(req: Request) {
         cost: costOf(v, forecastMix, rates, isOfficial, serviceCharged),
         costIfRule: costOf(v, forecastMix, rates, isOfficial, true).total,
         costAsOfficial: costOf(v, forecastMix, rates, true, true).total,
+        templateByCategory: templateByCategory(v, forecastMix),
         serviceCharged,
       };
     });

@@ -22,33 +22,37 @@ const BRL0 = new Intl.NumberFormat("pt-BR", {
 });
 const kNum = (v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v));
 
-// tons de azul distintos
+// cada categoria com cor bem distinta das outras (não tons próximos de azul)
 const T = {
-  marketing: "#7ab0e0", // primary-400
-  utility: "#a5cbeb", // primary-300
-  authentication: "#4679ca", // primary-600
+  marketing: "#7c3aed", // violet-600
+  utility: "#0d9488", // teal-600
+  authentication: "#c48b0a", // warning-600 (âmbar)
   costLine: "#212e4a", // primary-950
 };
 
 /**
- * Detalhe de templates (dentro do colapsável): volume por categoria (estimado por
- * amostragem) + linha de custo de template.
+ * Detalhe de templates: uma barra empilhada por mês, com uma cor por categoria
+ * (marketing, utility, authentication — proporção estimada por amostragem),
+ * mais uma linha de custo total. Inclui os meses reais e os projetados.
  */
 export default function TemplateChart({ data }: { data: DashboardPayload }) {
-  const sRate = data.pricing.serviceRateBrl;
-  const mRate = data.pricing.marketingRateBrl;
+  const hist = data.history.map((h) => ({
+    label: h.label,
+    marketing: h.templateByCategory.marketing,
+    utility: h.templateByCategory.utility,
+    authentication: h.templateByCategory.authentication,
+    custo: h.cost.template,
+  }));
 
-  const rows = data.history.map((h) => {
-    const tpl = h.volume.template + h.volume.campaignTemplate;
-    // aplica o mix — mas o mix não está no payload novo; recalcula via cost/rates
-    // (o custo de template já vem consolidado; aqui distribuímos por proporção)
-    // usamos o próprio cost.template para a linha
-    return {
-      label: h.label,
-      total: tpl,
-      custo: h.cost.template,
-    };
-  });
+  const fc = data.forecast.map((f) => ({
+    label: f.label,
+    marketing: f.templateByCategory.marketing,
+    utility: f.templateByCategory.utility,
+    authentication: f.templateByCategory.authentication,
+    custo: f.cost.template,
+  }));
+
+  const rows = [...hist, ...fc];
 
   return (
     <div className="chart-frame">
@@ -91,10 +95,27 @@ export default function TemplateChart({ data }: { data: DashboardPayload }) {
           />
           <Bar
             yAxisId="vol"
-            dataKey="total"
-            name="Templates enviados"
+            dataKey="marketing"
+            name="Marketing"
+            stackId="tpl"
+            fill={T.marketing}
+            maxBarSize={30}
+          />
+          <Bar
+            yAxisId="vol"
+            dataKey="utility"
+            name="Utility"
+            stackId="tpl"
+            fill={T.utility}
+            maxBarSize={30}
+          />
+          <Bar
+            yAxisId="vol"
+            dataKey="authentication"
+            name="Authentication"
+            stackId="tpl"
             fill={T.authentication}
-            maxBarSize={26}
+            maxBarSize={30}
             radius={[2, 2, 0, 0]}
           />
           <Line

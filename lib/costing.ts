@@ -36,6 +36,23 @@ function templateCost(count: number, mix: TemplateMix, rates: Rates): number {
   return mkt + util;
 }
 
+export type TemplateByCategory = {
+  marketing: number;
+  utility: number;
+  authentication: number;
+};
+
+/** Converte o total de templates do mês (avulsos + campanha) em contagem
+ * absoluta por categoria, aplicando a proporção estimada por amostragem. */
+export function templateByCategory(volume: Volume, mix: TemplateMix): TemplateByCategory {
+  const total = volume.template + volume.campaignTemplate;
+  return {
+    marketing: Math.round(total * mix.marketing),
+    utility: Math.round(total * mix.utility),
+    authentication: Math.round(total * mix.authentication),
+  };
+}
+
 /**
  * @param volume volumetria do período
  * @param mix    proporção de categoria dos templates do período

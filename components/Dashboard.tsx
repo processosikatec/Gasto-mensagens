@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { DashboardPayload } from "@/lib/types";
+import { apiFetch } from "@/lib/apiClient";
 import InfoCard from "./InfoCard";
 import VolumeChart from "./VolumeChart";
 import TemplateChart from "./TemplateChart";
@@ -35,7 +36,7 @@ export default function Dashboard() {
       setLoading(true);
       setErr(null);
       try {
-        const res = await fetch(`/api/dashboard?type=${t}&connection=${c}`, {
+        const res = await apiFetch(`/api/dashboard?type=${t}&connection=${c}`, {
           cache: "no-store",
         });
         const json = await res.json();
@@ -75,6 +76,19 @@ export default function Dashboard() {
     load({ connection: c });
   }
 
+  async function openDebugServices() {
+    try {
+      const res = await apiFetch("/api/debug/services");
+      const json = await res.json();
+      const blob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      // silencioso — é só uma ferramenta de diagnóstico
+    }
+  }
+
   const cur = data?.currentMonth;
   const ind = data?.indicators;
 
@@ -90,7 +104,6 @@ export default function Dashboard() {
       {err && (
         <div className="state err">
           <b>Erro:</b> {err}
-          {"\n\n"}Confira DIGISAC_TOKEN e DIGISAC_BASE_URL no arquivo .env.local.
         </div>
       )}
 
@@ -233,7 +246,12 @@ export default function Dashboard() {
           <details className="details">
             <summary>Templates por categoria, metodologia e fontes</summary>
             <div className="details-body">
-              <h3>Templates (HSM): volume e custo</h3>
+              <h3>Templates (HSM): volume por categoria e custo</h3>
+              <p className="hint">
+                Barras empilhadas por categoria (roxo = marketing, verde = utility, âmbar =
+                authentication) — proporção estimada por amostragem. Linha escura = custo total de
+                template no mês.
+              </p>
               <div className="panel">
                 <TemplateChart data={data} />
               </div>
@@ -285,9 +303,9 @@ export default function Dashboard() {
                   país só são publicados até 01/09/2026 — confirme sempre contra a fatura da Digisac.
                 </li>
                 <li>
-                  <a href="/api/debug/services" target="_blank" rel="noreferrer">
+                  <button type="button" className="login-signout" onClick={openDebugServices}>
                     Ver classificação das conexões
-                  </a>
+                  </button>
                 </li>
               </ul>
             </div>

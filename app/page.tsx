@@ -1,4 +1,6 @@
+import AuthGate from "@/components/AuthGate";
 import Dashboard from "@/components/Dashboard";
+import SignOutButton from "@/components/SignOutButton";
 
 export default function Page() {
   return (
@@ -10,11 +12,14 @@ export default function Page() {
           </p>
           <h1>Volumetria, custos e projeções</h1>
         </div>
-        <div className="meta" id="masthead-meta">
-          {/* preenchido pelo client */}
+        <div className="meta">
+          <div id="masthead-meta" />
+          <SignOutButton />
         </div>
       </header>
-      <Dashboard />
+      <AuthGate>
+        <Dashboard />
+      </AuthGate>
     </main>
   );
 }

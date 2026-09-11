@@ -3,6 +3,13 @@ import type { CostBreakdown } from "./costing";
 
 export type { Volume, TemplateMix, CostBreakdown };
 
+/** Contagem absoluta de templates enviados no mês, por categoria da Meta. */
+export type TemplateByCategory = {
+  marketing: number;
+  utility: number;
+  authentication: number;
+};
+
 export type MonthRow = {
   month: string; // "YYYY-MM"
   label: string; // "Ago/26"
@@ -12,6 +19,8 @@ export type MonthRow = {
   cost: CostBreakdown;
   /** custo do mês se a regra de serviço (01/10/2026) já valesse */
   costIfRule: number;
+  /** templates (avulsos + campanha) do mês, por categoria — estimado por amostragem */
+  templateByCategory: TemplateByCategory;
   /** só preenchido no mês corrente: fechamento projetado */
   projectedVolume: Volume | null;
   projectedCost: CostBreakdown | null;
@@ -32,6 +41,8 @@ export type ForecastRow = {
   costIfRule: number;
   /** custo do mês se a conexão fosse oficial (WABA), forçando serviço cobrado */
   costAsOfficial: number;
+  /** templates projetados por categoria — mesmo mix de base, repetido */
+  templateByCategory: TemplateByCategory;
   serviceCharged: boolean; // a regra de serviço já vale nesse mês?
 };
 

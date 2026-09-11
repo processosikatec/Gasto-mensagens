@@ -1,5 +1,7 @@
-// Cliente da API Digisac (server-only).
-//  - host: DIGISAC_BASE_URL (.chat ou .io)
+// Cliente da API Digisac (server-only, multi-tenant).
+//  - host + token vêm de `DigisacCreds` (sessão do cliente logado), nunca de
+//    estado de módulo — múltiplos clientes no mesmo processo Node não podem
+//    vazar credencial um pro outro.
 //  - Feathers/Sequelize: filtro via ?query=<JSON urlencoded> com {where, order, include}
 //  - operadores: $between, $ne, $gte, $lte, $in
 //  - resposta paginada: { data, total, limit, skip, currentPage, lastPage }
@@ -13,8 +15,9 @@
 //  - origin possíveis: bot | user | campaign
 //  - isComment:true                     => comentário interno, não vai pro WhatsApp
 
-const BASE = (process.env.DIGISAC_BASE_URL || "https://ikatec.digisac.chat").replace(/\/$/, "");
-const TOKEN = process.env.DIGISAC_TOKEN || "";
+import type { DigisacCreds } from "./session";
+
+export type { DigisacCreds };
 
 // Conexões pela API oficial da Meta (WhatsApp Business Platform / WABA via BSP).
 // Só elas geram cobrança. "whatsapp" puro (QR code) = Standard, custo zero.
@@ -66,15 +69,16 @@ export function classifyService(s: any): ServiceKind {
 export type Range = { start: string; end: string }; // ISO UTC
 
 async function apiGet(
+  creds: DigisacCreds,
   path: string,
   params: Record<string, string>,
   opts: { cache?: boolean } = {},
 ): Promise<any> {
-  if (!TOKEN) throw new Error("DIGISAC_TOKEN ausente no .env.local");
-  const url = new URL(BASE + path);
+  const base = creds.baseUrl.replace(/\/$/, "");
+  const url = new URL(base + path);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const res = await fetch(url.toString(), {
-    headers: { Authorization: "Bearer " + TOKEN, Accept: "application/json" },
+    headers: { Authorization: "Bearer " + creds.token, Accept: "application/json" },
     ...(opts.cache === false ? { cache: "no-store" as const } : { next: { revalidate: 300 } }),
   });
   const text = await res.text();
@@ -90,9 +94,9 @@ async function apiGet(
   return json;
 }
 
-async function countMessages(where: Record<string, unknown>): Promise<number> {
+async function countMessages(creds: DigisacCreds, where: Record<string, unknown>): Promise<number> {
   const query = JSON.stringify({ where });
-  const json = await apiGet("/api/v1/messages", { perPage: "1", query });
+  const json = await apiGet(creds, "/api/v1/messages", { perPage: "1", query });
   return Number(json?.total) || 0;
 }
 
@@ -114,6 +118,7 @@ function betweenTimestamp(r: Range) {
 export type HsmCategory = "MARKETING" | "UTILITY" | "AUTHENTICATION" | "OUTRO";
 
 async function sampleHalf(
+  creds: DigisacCreds,
   where: Record<string, unknown>,
   dir: "ASC" | "DESC",
   perPage: number,
@@ -124,6 +129,7 @@ async function sampleHalf(
     order: [["timestamp", dir]],
   });
   const json = await apiGet(
+    creds,
     "/api/v1/messages",
     { perPage: String(perPage), query },
     { cache: false },
@@ -132,13 +138,14 @@ async function sampleHalf(
 }
 
 async function sampleHsmCategories(
+  creds: DigisacCreds,
   where: Record<string, unknown>,
   sampleSize = 200,
 ): Promise<Record<HsmCategory, number>> {
   const half = Math.ceil(sampleSize / 2);
   const [a, b] = await Promise.all([
-    sampleHalf(where, "ASC", half),
-    sampleHalf(where, "DESC", half),
+    sampleHalf(creds, where, "ASC", half),
+    sampleHalf(creds, where, "DESC", half),
   ]);
   const seen = new Set<string>();
   const dist: Record<HsmCategory, number> = {
@@ -204,11 +211,13 @@ function daysInMonth(y: number, m1: number): number {
 }
 
 /**
+ * @param creds credenciais Digisac do cliente logado
  * @param month "YYYY-MM"
  * @param serviceIds conexões a considerar (undefined = todas)
  * @param nowIso instante de referência (define o mês corrente e o elapsedRatio)
  */
 export async function fetchMonth(
+  creds: DigisacCreds,
   month: string,
   serviceIds: string[] | undefined,
   nowIso: string,
@@ -252,6 +261,7 @@ export async function fetchMonth(
   const [service, campaignFreeform, template, campaignTemplate, received, mix] =
     await Promise.all([
       countMessages(
+        creds,
         S({
           isFromMe: true,
           isComment: false,
@@ -262,14 +272,16 @@ export async function fetchMonth(
         }),
       ),
       countMessages(
+        creds,
         S({ isFromMe: true, isComment: false, type: "chat", origin: "campaign", ...ts }),
       ),
       countMessages(
+        creds,
         S({ isFromMe: true, type: "hsm", origin: { $ne: "campaign" }, ...ts }),
       ),
-      countMessages(S({ isFromMe: true, type: "hsm", origin: "campaign", ...ts })),
-      countMessages(S({ isFromMe: false, type: "chat", ...ts })),
-      sampleHsmCategories(S({ ...ts })).catch(() => ({
+      countMessages(creds, S({ isFromMe: true, type: "hsm", origin: "campaign", ...ts })),
+      countMessages(creds, S({ isFromMe: false, type: "chat", ...ts })),
+      sampleHsmCategories(creds, S({ ...ts })).catch(() => ({
         MARKETING: 0,
         UTILITY: 0,
         AUTHENTICATION: 0,
@@ -312,6 +324,7 @@ export function monthsBack(n: number, refIso: string): string[] {
 }
 
 export async function fetchHistory(
+  creds: DigisacCreds,
   months: string[],
   serviceIds: string[] | undefined,
   nowIso: string,
@@ -319,7 +332,7 @@ export async function fetchHistory(
   const out: MonthBucket[] = [];
   for (let i = 0; i < months.length; i += 3) {
     const chunk = months.slice(i, i + 3);
-    out.push(...(await Promise.all(chunk.map((mo) => fetchMonth(mo, serviceIds, nowIso)))));
+    out.push(...(await Promise.all(chunk.map((mo) => fetchMonth(creds, mo, serviceIds, nowIso)))));
   }
   return out;
 }
@@ -335,8 +348,8 @@ export type ServiceInfo = {
   archived: boolean;
 };
 
-export async function fetchServices(): Promise<ServiceInfo[]> {
-  const json = await apiGet("/api/v1/services", { perPage: "200" });
+export async function fetchServices(creds: DigisacCreds): Promise<ServiceInfo[]> {
+  const json = await apiGet(creds, "/api/v1/services", { perPage: "200" });
   const list: any[] = json?.data || json?.results || (Array.isArray(json) ? json : []);
   return list.map((s) => ({
     id: s.id,
@@ -349,8 +362,8 @@ export async function fetchServices(): Promise<ServiceInfo[]> {
 }
 
 /** Dump cru dos serviços (debug) — sem tokens. */
-export async function fetchServicesRaw(): Promise<any[]> {
-  const json = await apiGet("/api/v1/services", { perPage: "200" });
+export async function fetchServicesRaw(creds: DigisacCreds): Promise<any[]> {
+  const json = await apiGet(creds, "/api/v1/services", { perPage: "200" });
   const list: any[] = json?.data || json?.results || (Array.isArray(json) ? json : []);
   return list.map((s) => {
     const { token, ...rest } = s;
