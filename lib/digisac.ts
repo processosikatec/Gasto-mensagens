@@ -68,6 +68,8 @@ export function classifyService(s: any): ServiceKind {
 
 export type Range = { start: string; end: string }; // ISO UTC
 
+const REQUEST_TIMEOUT_MS = 15_000;
+
 async function apiGet(
   creds: DigisacCreds,
   path: string,
@@ -77,8 +79,10 @@ async function apiGet(
   const base = creds.baseUrl.replace(/\/$/, "");
   const url = new URL(base + path);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+
   const res = await fetch(url.toString(), {
     headers: { Authorization: "Bearer " + creds.token, Accept: "application/json" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     ...(opts.cache === false ? { cache: "no-store" as const } : { next: { revalidate: 300 } }),
   });
   const text = await res.text();
@@ -89,7 +93,10 @@ async function apiGet(
     json = { raw: text.slice(0, 500) };
   }
   if (!res.ok) {
-    throw new Error(`Digisac ${path} -> HTTP ${res.status} ${JSON.stringify(json).slice(0, 200)}`);
+    // não embute o corpo da resposta na mensagem: em caso de SSRF (host
+    // adulterado) isso vazaria conteúdo de um serviço arbitrário para quem
+    // fez a requisição. Só o status é seguro de repassar.
+    throw new Error(`Digisac ${path} -> HTTP ${res.status}`);
   }
   return json;
 }
