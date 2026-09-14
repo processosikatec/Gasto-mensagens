@@ -5,14 +5,21 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        // A tela de login coleta a credencial Digisac do cliente — não deve
-        // ser embedável em iframe de terceiros (evita clickjacking/overlay
-        // sobre o formulário). O dashboard em si (/) é projetado para ir em
-        // iframe de uma plataforma-mãe e por isso não tem essa restrição;
-        // quando o domínio da plataforma-mãe for definido, restrinja aqui
-        // também com frame-ancestors 'self' https://dominio-do-portal.
+        // A tela de login é embedada em iframe pela própria plataforma Digisac
+        // do cliente (ex: ikatec.digisac.chat) quando a sessão expira/não
+        // existe e o AuthGate redireciona pra cá dentro do iframe. Libera os
+        // mesmos sufixos de host aceitos como baseUrl em
+        // app/api/auth/login/route.ts (ALLOWED_HOST_SUFFIXES) mais o próprio
+        // domínio, e bloqueia qualquer outro terceiro (evita clickjacking/
+        // overlay sobre o formulário de credenciais). Se ALLOWED_HOST_SUFFIXES
+        // mudar, atualize aqui também.
         source: "/login",
-        headers: [{ key: "Content-Security-Policy", value: "frame-ancestors 'self'" }],
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors 'self' https://*.digisac.chat https://*.digisac.io",
+          },
+        ],
       },
     ];
   },
