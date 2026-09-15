@@ -17,7 +17,10 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Content-Security-Policy",
-            value: "frame-ancestors 'self' https://*.digisac.chat https://*.digisac.io",
+            value:
+              "frame-ancestors 'self' https://*.digisac.chat https://*.digisac.io " +
+              "https://*.digisac.ai https://*.digisac.me https://*.digisac.co " +
+              "https://*.digisac.biz https://*.digisac.net",
           },
         ],
       },

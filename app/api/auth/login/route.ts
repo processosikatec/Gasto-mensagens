@@ -11,7 +11,15 @@ const LOGIN_WINDOW_MS = 5 * 60 * 1000; // por 5 minutos, por IP
 // Allowlist: só aceita hosts reais da Digisac. Sem isso, baseUrl vira um vetor
 // de SSRF — o servidor faria fetch() para qualquer host que o cliente mandasse
 // (rede interna, metadata de cloud, localhost etc.).
-const ALLOWED_HOST_SUFFIXES = [".digisac.chat", ".digisac.io"];
+const ALLOWED_HOST_SUFFIXES = [
+  ".digisac.chat",
+  ".digisac.io",
+  ".digisac.ai",
+  ".digisac.me",
+  ".digisac.co",
+  ".digisac.biz",
+  ".digisac.net",
+];
 
 function normalizeBaseUrl(raw: string): string | null {
   let url = raw.trim().replace(/\/$/, "");
