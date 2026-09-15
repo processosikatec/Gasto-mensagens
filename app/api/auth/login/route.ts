@@ -19,6 +19,7 @@ const ALLOWED_HOST_SUFFIXES = [
   ".digisac.co",
   ".digisac.biz",
   ".digisac.net",
+  ".digisac.app",
 ];
 
 function normalizeBaseUrl(raw: string): string | null {
