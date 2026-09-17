@@ -100,10 +100,10 @@ export async function GET(req: Request) {
     // busca 24 meses para o cálculo da projeção (mais veracidade + sazonalidade)
     const months = monthsBack(CALC_MONTHS, nowIso);
 
-    const [buckets, globalBucket] = await Promise.all([
-      fetchHistory(creds, months, serviceIds, nowIso),
-      fetchMonth(creds, currMonth, allOfficialIds, nowIso),
-    ]);
+    // sequencial: evita somar concorrência à contenção que fetchHistory já
+    // administra internamente para contas com muito volume.
+    const buckets = await fetchHistory(creds, months, serviceIds, nowIso);
+    const globalBucket = await fetchMonth(creds, currMonth, allOfficialIds, nowIso);
 
     const serviceChargedNow = ruleActiveAt(nowIso.slice(0, 10));
     const globalCost = costOf(
@@ -166,6 +166,7 @@ export async function GET(req: Request) {
         label: label(b.month),
         partial: b.partial,
         elapsedRatio: b.elapsedRatio,
+        unavailable: b.unavailable,
         volume: b.volume,
         cost,
         costIfRule,
@@ -220,7 +221,7 @@ export async function GET(req: Request) {
 
     // ---- projeção: tendência linear (mínimos quadrados) sobre os últimos meses
     // completos — cada mês projetado tem seu próprio valor, sem sazonalidade ----
-    const completeBuckets = buckets.filter((b) => !b.partial);
+    const completeBuckets = buckets.filter((b) => !b.partial && !b.unavailable);
     const forecastBase = completeBuckets.slice(-CALC_MONTHS);
     const forecastVolumes = projectTrend(
       forecastBase.map((b) => b.volume),
@@ -258,6 +259,7 @@ export async function GET(req: Request) {
     const costAsOfficialAvgBrl = avg(forecast.map((f) => f.costAsOfficial));
 
     const indicators = {
+      unavailable: current.unavailable,
       monthSentTotal: current.volume.sent,
       monthSent: current.volume.service + current.volume.campaignFreeform,
       monthReceived: current.volume.received,
@@ -310,6 +312,7 @@ export async function GET(req: Request) {
         costProjected: globalProjected.total,
         costProjectedIfRuleActive: globalProjectedIfRule.total,
         elapsedRatio: globalBucket.elapsedRatio,
+        unavailable: globalBucket.unavailable,
       },
       currentMonth: current,
       history,

@@ -16,7 +16,7 @@ const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
  */
 export default function HistoryTable({ data }: { data: DashboardPayload }) {
   const rows = data.history;
-  const done = rows.filter((h) => !h.partial);
+  const done = rows.filter((h) => !h.partial && !h.unavailable);
   const sum = (f: (h: (typeof rows)[number]) => number) => done.reduce((a, h) => a + f(h), 0);
 
   return (
@@ -31,17 +31,26 @@ export default function HistoryTable({ data }: { data: DashboardPayload }) {
         </tr>
       </thead>
       <tbody>
-        {rows.map((h) => (
-          <tr key={h.month} className={h.partial ? "partial" : ""}>
-            <td>{cap(h.label)}</td>
-            <td className="strong">{n(h.volume.sent)}</td>
-            <td>{n(h.volume.received)}</td>
-            <td>{h.projectedVolume ? n(h.projectedVolume.sent) : "—"}</td>
-            <td className="strong">
-              {h.projectedCost ? `${r(h.cost.total)} → ${r(h.projectedCost.total)}` : r(h.cost.total)}
-            </td>
-          </tr>
-        ))}
+        {rows.map((h) =>
+          h.unavailable ? (
+            <tr key={h.month} className="partial">
+              <td>{cap(h.label)}</td>
+              <td colSpan={4} style={{ color: "var(--danger, #b3261e)" }}>
+                Dados indisponíveis — a consulta a este mês falhou. Tente atualizar a página.
+              </td>
+            </tr>
+          ) : (
+            <tr key={h.month} className={h.partial ? "partial" : ""}>
+              <td>{cap(h.label)}</td>
+              <td className="strong">{n(h.volume.sent)}</td>
+              <td>{n(h.volume.received)}</td>
+              <td>{h.projectedVolume ? n(h.projectedVolume.sent) : "—"}</td>
+              <td className="strong">
+                {h.projectedCost ? `${r(h.cost.total)} → ${r(h.projectedCost.total)}` : r(h.cost.total)}
+              </td>
+            </tr>
+          ),
+        )}
         {data.forecast.map((f) => (
           <tr key={f.month} className="future">
             <td>{cap(f.label)} · Projeção</td>

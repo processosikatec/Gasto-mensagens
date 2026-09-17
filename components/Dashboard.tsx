@@ -115,17 +115,25 @@ export default function Dashboard() {
             <span className="mb-label">
               Gasto de {cap(cur.label)} · {data.monthGlobal.officialConnections} conexões oficiais
             </span>
-            <span className="mb-val">{brl(data.monthGlobal.costNow)}</span>
-            {!data.ruleActiveNow && (
-              <span className="mb-proj">
-                Com a regra ativa:{" "}
-                <b>{brl(data.monthGlobal.costProjectedIfRuleActive)}</b>
+            {data.monthGlobal.unavailable ? (
+              <span className="mb-val" style={{ color: "var(--danger, #b3261e)" }}>
+                Indisponível — tente atualizar a página
               </span>
-            )}
-            {data.monthGlobal.elapsedRatio < 0.98 && (
-              <span className="mb-proj">
-                Fechamento estimado: {brl(data.monthGlobal.costProjected)}
-              </span>
+            ) : (
+              <>
+                <span className="mb-val">{brl(data.monthGlobal.costNow)}</span>
+                {!data.ruleActiveNow && (
+                  <span className="mb-proj">
+                    Com a regra ativa:{" "}
+                    <b>{brl(data.monthGlobal.costProjectedIfRuleActive)}</b>
+                  </span>
+                )}
+                {data.monthGlobal.elapsedRatio < 0.98 && (
+                  <span className="mb-proj">
+                    Fechamento estimado: {brl(data.monthGlobal.costProjected)}
+                  </span>
+                )}
+              </>
             )}
           </div>
 
@@ -169,33 +177,41 @@ export default function Dashboard() {
           <div className="kpis">
             <InfoCard
               label={`Enviadas em ${cap(cur.label)}`}
-              value={num(ind.monthProjectedSent)}
-              sub={`Realizado ${num(ind.monthSentTotal)} · ${Math.round(
-                cur.elapsedRatio * 100,
-              )}% do mês`}
+              value={ind.unavailable ? "—" : num(ind.monthProjectedSent)}
+              sub={
+                ind.unavailable
+                  ? "Dados indisponíveis — tente atualizar a página"
+                  : `Realizado ${num(ind.monthSentTotal)} · ${Math.round(
+                      cur.elapsedRatio * 100,
+                    )}% do mês`
+              }
               info="Total de mensagens enviadas (serviço + templates + campanhas) no mês corrente: realizado até agora e projeção de fechamento pró-rata."
             />
             <InfoCard
               accent="danger"
               label="Custo do mês hoje"
-              value={brl(ind.monthProjectedCost)}
+              value={ind.unavailable ? "—" : brl(ind.monthProjectedCost)}
               sub={
-                data.ruleActiveNow
-                  ? "Serviço + templates"
-                  : `Só templates — serviço grátis até ${fmtDate(data.ruleStartsAt)}`
+                ind.unavailable
+                  ? "Dados indisponíveis — tente atualizar a página"
+                  : data.ruleActiveNow
+                    ? "Serviço + templates"
+                    : `Só templates — serviço grátis até ${fmtDate(data.ruleStartsAt)}`
               }
               info="Custo de fechamento estimado do mês corrente com as regras vigentes hoje. Realizado até agora dividido pela fração de dias decorridos."
             />
             <InfoCard
               accent="danger"
               label="Custo do mês se a regra valesse"
-              value={brl(ind.monthProjectedCostIfRuleActive)}
+              value={ind.unavailable ? "—" : brl(ind.monthProjectedCostIfRuleActive)}
               sub={
-                data.ruleActiveNow
-                  ? "Regra já em vigor"
-                  : `+${brl(
-                      ind.monthProjectedCostIfRuleActive - ind.monthProjectedCost,
-                    )} vs. hoje`
+                ind.unavailable
+                  ? "Dados indisponíveis — tente atualizar a página"
+                  : data.ruleActiveNow
+                    ? "Regra já em vigor"
+                    : `+${brl(
+                        ind.monthProjectedCostIfRuleActive - ind.monthProjectedCost,
+                      )} vs. hoje`
               }
               info={
                 "Simulação: quanto o mês corrente custaria se a cobrança da mensagem de serviço (01/10/2026) já estivesse ativa, sobre o volume projetado do mês."

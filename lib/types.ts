@@ -15,6 +15,8 @@ export type MonthRow = {
   label: string; // "Ago/26"
   partial: boolean;
   elapsedRatio: number;
+  /** true se a API do cliente falhou ao consultar este mês — volume/custo abaixo são 0, não reais */
+  unavailable?: boolean;
   volume: Volume;
   cost: CostBreakdown;
   /** custo do mês se a regra de serviço (01/10/2026) já valesse */
@@ -85,6 +87,8 @@ export type DashboardPayload = {
     /** fechamento do mês simulando a regra de serviço já ativa */
     costProjectedIfRuleActive: number;
     elapsedRatio: number;
+    /** true se a consulta ao mês corrente falhou — costNow/costProjected são 0, não reais */
+    unavailable?: boolean;
   };
   currentMonth: MonthRow;
   history: MonthRow[]; // meses anteriores + currentMonth como último item
@@ -98,6 +102,8 @@ export type DashboardPayload = {
   /** custo mensal projetado se a seleção fosse oficial (relevante p/ filtro Standard) */
   costAfterRuleIfOfficialBrl: number;
   indicators: {
+    /** true se a consulta ao mês corrente falhou — os números abaixo são 0, não reais */
+    unavailable?: boolean;
     // "Este mês" — realizado até agora
     monthSentTotal: number; // enviadas (todas)
     monthSent: number; // enviadas de serviço (livre, sem template)

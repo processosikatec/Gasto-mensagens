@@ -68,7 +68,7 @@ export function classifyService(s: any): ServiceKind {
 
 export type Range = { start: string; end: string }; // ISO UTC
 
-const REQUEST_TIMEOUT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 30_000; // margem para clientes com volume grande, mesmo com consultas sequenciais
 
 async function apiGet(
   creds: DigisacCreds,
@@ -150,10 +150,8 @@ async function sampleHsmCategories(
   sampleSize = 200,
 ): Promise<Record<HsmCategory, number>> {
   const half = Math.ceil(sampleSize / 2);
-  const [a, b] = await Promise.all([
-    sampleHalf(creds, where, "ASC", half),
-    sampleHalf(creds, where, "DESC", half),
-  ]);
+  const a = await sampleHalf(creds, where, "ASC", half);
+  const b = await sampleHalf(creds, where, "DESC", half);
   const seen = new Set<string>();
   const dist: Record<HsmCategory, number> = {
     MARKETING: 0,
@@ -211,6 +209,8 @@ export type MonthBucket = {
   volume: Volume;
   /** proporção de categoria dos templates (aplicada a template + campaignTemplate) */
   templateMix: TemplateMix;
+  /** true se a consulta a este mês falhou (timeout/erro) — volume é 0 mas não é real */
+  unavailable?: boolean;
 };
 
 function daysInMonth(y: number, m1: number): number {
@@ -265,59 +265,72 @@ export async function fetchMonth(
   const ts = betweenTimestamp(range);
   const S = (w: Record<string, unknown>) => scopeToServices(w, serviceIds);
 
-  const [service, campaignFreeform, template, campaignTemplate, received, mix] =
-    await Promise.all([
-      countMessages(
-        creds,
-        S({
-          isFromMe: true,
-          isComment: false,
-          type: "chat",
-          hsmId: null,
-          origin: { $ne: "campaign" },
-          ...ts,
-        }),
-      ),
-      countMessages(
-        creds,
-        S({ isFromMe: true, isComment: false, type: "chat", origin: "campaign", ...ts }),
-      ),
-      countMessages(
-        creds,
-        S({ isFromMe: true, type: "hsm", origin: { $ne: "campaign" }, ...ts }),
-      ),
-      countMessages(creds, S({ isFromMe: true, type: "hsm", origin: "campaign", ...ts })),
-      countMessages(creds, S({ isFromMe: false, type: "chat", ...ts })),
-      sampleHsmCategories(creds, S({ ...ts })).catch(() => ({
-        MARKETING: 0,
-        UTILITY: 0,
-        AUTHENTICATION: 0,
-        OUTRO: 0,
-      })),
-    ]);
+  // sequencial, não Promise.all: em contas com muito volume, algumas dessas
+  // contagens (as que filtram type:"chat", ver comentário em fetchHistory)
+  // já são lentas sozinhas — paralelizar só faz todas competirem pelo mesmo
+  // timeout ao mesmo tempo, sem ganho real.
+  //
+  // Se qualquer contagem deste mês falhar (timeout/erro), o mês inteiro vira
+  // "unavailable" em vez de derrubar o dashboard todo — os demais meses e
+  // conexões continuam disponíveis; o front avisa que este mês não carregou
+  // (nunca mostra volume 0 como se fosse um dado real).
+  try {
+    const service = await countMessages(
+      creds,
+      S({
+        isFromMe: true,
+        isComment: false,
+        type: "chat",
+        hsmId: null,
+        origin: { $ne: "campaign" },
+        ...ts,
+      }),
+    );
+    const campaignFreeform = await countMessages(
+      creds,
+      S({ isFromMe: true, isComment: false, type: "chat", origin: "campaign", ...ts }),
+    );
+    const template = await countMessages(
+      creds,
+      S({ isFromMe: true, type: "hsm", origin: { $ne: "campaign" }, ...ts }),
+    );
+    const campaignTemplate = await countMessages(
+      creds,
+      S({ isFromMe: true, type: "hsm", origin: "campaign", ...ts }),
+    );
+    const received = await countMessages(creds, S({ isFromMe: false, type: "chat", ...ts }));
+    const mix = await sampleHsmCategories(creds, S({ ...ts })).catch(() => ({
+      MARKETING: 0,
+      UTILITY: 0,
+      AUTHENTICATION: 0,
+      OUTRO: 0,
+    }));
 
-  const sampleN = mix.MARKETING + mix.UTILITY + mix.AUTHENTICATION + mix.OUTRO;
+    const sampleN = mix.MARKETING + mix.UTILITY + mix.AUTHENTICATION + mix.OUTRO;
 
-  return {
-    month,
-    range,
-    partial,
-    elapsedRatio,
-    volume: {
-      sent: service + campaignFreeform + template + campaignTemplate,
-      received,
-      service,
-      campaignFreeform,
-      template,
-      campaignTemplate,
-    },
-    templateMix: {
-      marketing: sampleN > 0 ? mix.MARKETING / sampleN : 0,
-      utility: sampleN > 0 ? mix.UTILITY / sampleN : 0,
-      authentication: sampleN > 0 ? mix.AUTHENTICATION / sampleN : 0,
-      sample: sampleN,
-    },
-  };
+    return {
+      month,
+      range,
+      partial,
+      elapsedRatio,
+      volume: {
+        sent: service + campaignFreeform + template + campaignTemplate,
+        received,
+        service,
+        campaignFreeform,
+        template,
+        campaignTemplate,
+      },
+      templateMix: {
+        marketing: sampleN > 0 ? mix.MARKETING / sampleN : 0,
+        utility: sampleN > 0 ? mix.UTILITY / sampleN : 0,
+        authentication: sampleN > 0 ? mix.AUTHENTICATION / sampleN : 0,
+        sample: sampleN,
+      },
+    };
+  } catch {
+    return { ...empty, unavailable: true };
+  }
 }
 
 export function monthsBack(n: number, refIso: string): string[] {
@@ -336,12 +349,31 @@ export async function fetchHistory(
   serviceIds: string[] | undefined,
   nowIso: string,
 ): Promise<MonthBucket[]> {
+  // Meses fechados são rápidos, inclusive em paralelo alto. Em algumas contas
+  // com muito volume, 1+ contagens do mês CORRENTE (que filtram type:"chat",
+  // ex: mensagens de serviço) são estruturalmente lentas na API da Digisac
+  // (medido: 30-60s+ mesmo isoladas e sequenciais — provável falta de índice
+  // do lado deles para esse padrão de filtro em tabela grande; não é
+  // concorrência do nosso lado). Isola o mês corrente do resto para não
+  // atrasar os fechados; se ele estourar o timeout, vira "unavailable" (ver
+  // fetchMonth) em vez de derrubar o dashboard inteiro.
+  const now = new Date(nowIso);
+  const currMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  const closedMonths = months.filter((mo) => mo !== currMonth);
+  const currentMonths = months.filter((mo) => mo === currMonth);
+
+  const CHUNK = 12;
   const out: MonthBucket[] = [];
-  for (let i = 0; i < months.length; i += 3) {
-    const chunk = months.slice(i, i + 3);
+  for (let i = 0; i < closedMonths.length; i += CHUNK) {
+    const chunk = closedMonths.slice(i, i + CHUNK);
     out.push(...(await Promise.all(chunk.map((mo) => fetchMonth(creds, mo, serviceIds, nowIso)))));
   }
-  return out;
+  for (const mo of currentMonths) {
+    out.push(await fetchMonth(creds, mo, serviceIds, nowIso));
+  }
+  // reordena para a ordem original de `months` (currMonth normalmente já é o último)
+  const byMonth = new Map(out.map((b) => [b.month, b]));
+  return months.map((mo) => byMonth.get(mo)!);
 }
 
 // ---------- conexões ----------
