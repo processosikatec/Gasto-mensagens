@@ -376,6 +376,92 @@ export async function fetchHistory(
   return months.map((mo) => byMonth.get(mo)!);
 }
 
+// ---------- ranking de templates por volume ----------
+
+export type TemplateUsage = {
+  hsmId: string;
+  name: string;
+  category: HsmCategory;
+  count: number;
+};
+
+/**
+ * Templates mais usados no período: amostra mensagens hsm (ASC+DESC) para
+ * descobrir quais hsmId existem, depois busca a contagem EXATA de cada um via
+ * count filtrado (não amostrada). Só templates raros o suficiente para não
+ * aparecer na amostra ficam de fora — impacto baixo no ranking por volume.
+ */
+export async function topTemplates(
+  creds: DigisacCreds,
+  range: Range,
+  serviceIds: string[] | undefined,
+  limit: number,
+  sampleSize = 400,
+): Promise<TemplateUsage[]> {
+  const ts = betweenTimestamp(range);
+  const where = scopeToServices(ts, serviceIds);
+
+  const half = Math.ceil(sampleSize / 2);
+  const [a, b] = await Promise.all([
+    sampleHalf(creds, where, "ASC", half),
+    sampleHalf(creds, where, "DESC", half),
+  ]);
+
+  const seen = new Map<string, { name: string; category: HsmCategory }>();
+  for (const m of [...a, ...b]) {
+    const hsmId = m?.hsmId;
+    if (!hsmId || seen.has(hsmId)) continue;
+    const cat = String(m?.hsm?.category || "").toUpperCase();
+    seen.set(hsmId, {
+      name: m?.hsm?.internalName || "(sem nome)",
+      category: cat === "MARKETING" || cat === "UTILITY" || cat === "AUTHENTICATION" ? (cat as HsmCategory) : "OUTRO",
+    });
+  }
+
+  const ids = [...seen.keys()];
+  const counts = await Promise.all(
+    ids.map((hsmId) => countMessages(creds, scopeToServices({ ...ts, type: "hsm", isFromMe: true, hsmId }, serviceIds))),
+  );
+
+  return ids
+    .map((hsmId, i) => ({ hsmId, name: seen.get(hsmId)!.name, category: seen.get(hsmId)!.category, count: counts[i] }))
+    .sort((x, y) => y.count - x.count)
+    .slice(0, limit);
+}
+
+// ---------- ranking de campanhas por custo ----------
+
+export type CampaignUsage = {
+  id: string;
+  title: string;
+  sentCount: number;
+  status: string;
+};
+
+/** Campanhas do período, ordenadas por mensagens enviadas (custo é estimado depois via tarifa média — ver lib/costing.ts). */
+export async function topCampaigns(
+  creds: DigisacCreds,
+  range: Range,
+  serviceIds: string[] | undefined,
+  limit: number,
+): Promise<CampaignUsage[]> {
+  const query = JSON.stringify({
+    where: scopeToServices(
+      { createdAt: { $between: [range.start, range.end] } },
+      serviceIds,
+    ),
+    order: [["sentMessagesCount", "DESC"]],
+  });
+  const json = await apiGet(creds, "/api/v1/campaigns", { perPage: String(limit), query }, { cache: false });
+  const list: any[] = json?.data || [];
+  return list.map((c) => ({
+    id: c.id,
+    title: c.title || "(sem título)",
+    sentCount: Number(c.sentMessagesCount) || 0,
+    status: c.status || "?",
+  }));
+}
+
 // ---------- conexões ----------
 
 export type ServiceInfo = {

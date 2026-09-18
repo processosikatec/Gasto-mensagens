@@ -30,7 +30,7 @@ export function ruleActiveAt(refIso: string): boolean {
 }
 
 /** Custo de um bloco de templates dado o mix de categoria. */
-function templateCost(count: number, mix: TemplateMix, rates: Rates): number {
+export function templateCost(count: number, mix: TemplateMix, rates: Rates): number {
   const mkt = count * mix.marketing * rates.marketingRateBrl;
   const util = count * (mix.utility + mix.authentication) * rates.serviceRateBrl;
   return mkt + util;

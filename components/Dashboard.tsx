@@ -8,6 +8,7 @@ import InfoCard from "./InfoCard";
 import VolumeChart from "./VolumeChart";
 import TemplateChart from "./TemplateChart";
 import HistoryTable from "./HistoryTable";
+import RankingsPanel from "./RankingsPanel";
 
 const MONTH_CONCURRENCY = 5;
 
@@ -371,6 +372,8 @@ export default function Dashboard() {
               <HistoryTable data={data} />
             </div>
           </section>
+
+          <RankingsPanel data={data} />
 
           {/* Detalhes */}
           <details className="details">

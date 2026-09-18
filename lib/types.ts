@@ -15,6 +15,8 @@ export type MonthRow = {
   label: string; // "Ago/26"
   partial: boolean;
   elapsedRatio: number;
+  /** intervalo ISO UTC consultado — usado para buscar rankings de template/campanha deste mês */
+  range: { start: string; end: string };
   /** true se a API do cliente falhou ao consultar este mês — volume/custo abaixo são 0, não reais */
   unavailable?: boolean;
   volume: Volume;
@@ -62,6 +64,8 @@ export type DashboardPayload = {
     connectionId: string | null; // null = todas do tipo
     availableConnections: ConnectionOption[];
     consideredCount: number; // conexões efetivamente consultadas
+    /** ids das conexões efetivamente consultadas — usar em chamadas de ranking */
+    serviceIds: string[];
     isOfficial: boolean; // seleção gera custo?
   };
   pricing: {

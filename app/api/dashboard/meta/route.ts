@@ -83,6 +83,7 @@ export async function GET(req: Request) {
         connectionId,
         availableConnections,
         consideredCount: serviceIds.length,
+        serviceIds,
         isOfficial,
       },
       serviceIds,

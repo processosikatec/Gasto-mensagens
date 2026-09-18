@@ -124,6 +124,7 @@ export async function POST(req: Request) {
         label: label(b.month),
         partial: b.partial,
         elapsedRatio: b.elapsedRatio,
+        range: b.range,
         unavailable: b.unavailable,
         volume: b.volume,
         cost,
