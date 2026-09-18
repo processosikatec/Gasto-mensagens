@@ -473,9 +473,28 @@ export type ServiceInfo = {
   archived: boolean;
 };
 
+const SERVICES_PAGE_SIZE = 200;
+const SERVICES_MAX_PAGES = 20; // trava de segurança — 4000 conexões
+
+/** Busca todas as páginas de /api/v1/services (contas grandes passam de 200 conexões). */
+async function fetchAllServicesRaw(creds: DigisacCreds): Promise<any[]> {
+  const out: any[] = [];
+  let page = 1;
+  for (; page <= SERVICES_MAX_PAGES; page++) {
+    const json = await apiGet(creds, "/api/v1/services", {
+      perPage: String(SERVICES_PAGE_SIZE),
+      page: String(page),
+    });
+    const list: any[] = json?.data || json?.results || (Array.isArray(json) ? json : []);
+    out.push(...list);
+    const lastPage = Number(json?.lastPage) || 1;
+    if (page >= lastPage || list.length === 0) break;
+  }
+  return out;
+}
+
 export async function fetchServices(creds: DigisacCreds): Promise<ServiceInfo[]> {
-  const json = await apiGet(creds, "/api/v1/services", { perPage: "200" });
-  const list: any[] = json?.data || json?.results || (Array.isArray(json) ? json : []);
+  const list = await fetchAllServicesRaw(creds);
   return list.map((s) => ({
     id: s.id,
     name: s.name || s.label || s.id,
@@ -488,8 +507,7 @@ export async function fetchServices(creds: DigisacCreds): Promise<ServiceInfo[]>
 
 /** Dump cru dos serviços (debug) — sem tokens. */
 export async function fetchServicesRaw(creds: DigisacCreds): Promise<any[]> {
-  const json = await apiGet(creds, "/api/v1/services", { perPage: "200" });
-  const list: any[] = json?.data || json?.results || (Array.isArray(json) ? json : []);
+  const list = await fetchAllServicesRaw(creds);
   return list.map((s) => {
     const { token, ...rest } = s;
     return rest;
