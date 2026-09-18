@@ -1,7 +1,7 @@
-import type { ServiceInfo, TemplateMix, Volume } from "./digisac";
+import type { MonthBucket, ServiceInfo, TemplateMix, Volume } from "./digisac";
 import type { CostBreakdown } from "./costing";
 
-export type { Volume, TemplateMix, CostBreakdown };
+export type { Volume, TemplateMix, CostBreakdown, MonthBucket };
 
 /** Contagem absoluta de templates enviados no mês, por categoria da Meta. */
 export type TemplateByCategory = {
@@ -120,6 +120,50 @@ export type DashboardPayload = {
     monthCostIfOfficial: number;
     monthProjectedCostIfOfficial: number;
   };
+};
+
+/**
+ * Resposta de GET /api/dashboard/meta — dados leves (conexões, preço, câmbio,
+ * lista de meses a buscar) para o client orquestrar as chamadas seguintes.
+ * `generatedAt` e `months` devem ser reusados literalmente em toda chamada a
+ * /api/dashboard/month e /api/dashboard/compute — nunca recalculados — para
+ * que elapsedRatio/partial fiquem consistentes entre todas as chamadas de um
+ * mesmo carregamento.
+ */
+export type DashboardMetaPayload = {
+  generatedAt: string;
+  filters: DashboardPayload["filters"];
+  /** conexões consideradas pelo filtro atual — usar como serviceIds em /month */
+  serviceIds: string[];
+  /** todas as conexões oficiais, ignora filtro — usar para o mês corrente "global" */
+  allOfficialIds: string[];
+  currMonth: string; // "YYYY-MM"
+  /** lista exata de meses do histórico a buscar via /api/dashboard/month, em ordem */
+  months: string[];
+  pricing: DashboardPayload["pricing"];
+  fx: DashboardPayload["fx"];
+  ruleStartsAt: string;
+  ruleActiveNow: boolean;
+};
+
+/**
+ * Corpo de POST /api/dashboard/compute — buckets já coletados pelo client via
+ * chamadas a /api/dashboard/month; o endpoint só roda a matemática de custo/
+ * projeção (sem chamar a API Digisac) e devolve o DashboardPayload final.
+ */
+export type DashboardComputeRequest = {
+  generatedAt: string;
+  filters: DashboardPayload["filters"];
+  pricing: DashboardPayload["pricing"];
+  fx: DashboardPayload["fx"];
+  ruleStartsAt: string;
+  ruleActiveNow: boolean;
+  /** um bucket por mês em `months`, na mesma ordem, buscado com serviceIds filtrados */
+  months: string[];
+  buckets: MonthBucket[];
+  /** mês corrente buscado com allOfficialIds (sem filtro) — pode ser igual a buckets[last] */
+  globalBucket: MonthBucket;
+  allOfficialCount: number;
 };
 
 export type { ServiceInfo };

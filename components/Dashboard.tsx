@@ -1,12 +1,48 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { DashboardPayload } from "@/lib/types";
+import type { DashboardComputeRequest, DashboardMetaPayload, DashboardPayload, MonthBucket } from "@/lib/types";
 import { apiFetch } from "@/lib/apiClient";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import InfoCard from "./InfoCard";
 import VolumeChart from "./VolumeChart";
 import TemplateChart from "./TemplateChart";
 import HistoryTable from "./HistoryTable";
+
+const MONTH_CONCURRENCY = 5;
+
+function unavailableBucket(month: string): MonthBucket {
+  return {
+    month,
+    range: { start: "", end: "" },
+    partial: false,
+    elapsedRatio: 1,
+    volume: { sent: 0, received: 0, service: 0, campaignFreeform: 0, template: 0, campaignTemplate: 0 },
+    templateMix: { marketing: 0, utility: 0, authentication: 0, sample: 0 },
+    unavailable: true,
+  };
+}
+
+async function fetchMonthBucket(month: string, nowIso: string, serviceIds: string[]): Promise<MonthBucket> {
+  try {
+    const params = new URLSearchParams({ month, nowIso, serviceIds: serviceIds.join(",") });
+    const res = await apiFetch(`/api/dashboard/month?${params}`, { cache: "no-store" });
+    const text = await res.text();
+    const json = JSON.parse(text);
+    if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+    return json as MonthBucket;
+  } catch {
+    // erro de rede, 502 de gateway, corpo vazio/inválido — este mês não carregou;
+    // não deve derrubar os demais meses nem o dashboard inteiro.
+    return unavailableBucket(month);
+  }
+}
+
+function sameIds(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const s = new Set(a);
+  return b.every((x) => s.has(x));
+}
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const BRL4 = new Intl.NumberFormat("pt-BR", {
@@ -27,6 +63,7 @@ export default function Dashboard() {
   const [connection, setConnection] = useState("all");
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(
@@ -34,19 +71,96 @@ export default function Dashboard() {
       const t = over?.type ?? type;
       const c = over?.connection ?? connection;
       setLoading(true);
+      setProgress(null);
       setErr(null);
       try {
-        const res = await apiFetch(`/api/dashboard?type=${t}&connection=${c}`, {
+        // 1) metadados leves: conexões, preço, câmbio, lista de meses a buscar
+        const metaRes = await apiFetch(`/api/dashboard/meta?type=${t}&connection=${c}`, {
           cache: "no-store",
         });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+        const metaText = await metaRes.text();
+        let meta: DashboardMetaPayload;
+        try {
+          meta = JSON.parse(metaText);
+        } catch {
+          throw new Error("Falha ao carregar. Tente atualizar a página.");
+        }
+        if (!metaRes.ok) throw new Error((meta as any).error || `HTTP ${metaRes.status}`);
+
+        // 2) um mês por vez, com concorrência limitada — mês corrente isolado por
+        // último, já que é a chamada estruturalmente mais lenta em contas com
+        // muito volume (ver lib/digisac.ts). Cada chamada cabe no timeout do
+        // gateway do Netlify; se uma falhar, vira bucket "unavailable" sem
+        // travar as demais.
+        const closedMonths = meta.months.filter((m) => m !== meta.currMonth);
+        const currentMonths = meta.months.filter((m) => m === meta.currMonth);
+
+        let done = 0;
+        const total = meta.months.length + (sameIds(meta.serviceIds, meta.allOfficialIds) ? 0 : 1);
+        setProgress({ done: 0, total });
+        const tick = () => setProgress({ done: ++done, total });
+
+        const closedBuckets = await mapWithConcurrency(closedMonths, MONTH_CONCURRENCY, async (m) => {
+          const b = await fetchMonthBucket(m, meta.generatedAt, meta.serviceIds);
+          tick();
+          return b;
+        });
+
+        const currentFiltered: MonthBucket[] = [];
+        for (const m of currentMonths) {
+          currentFiltered.push(await fetchMonthBucket(m, meta.generatedAt, meta.serviceIds));
+          tick();
+        }
+
+        const byMonth = new Map<string, MonthBucket>();
+        closedMonths.forEach((m, i) => byMonth.set(m, closedBuckets[i]));
+        currentMonths.forEach((m, i) => byMonth.set(m, currentFiltered[i]));
+        const buckets = meta.months.map((m) => byMonth.get(m)!);
+
+        // mês corrente "global" (todas as conexões oficiais, ignora filtro) — só
+        // busca de novo se o filtro selecionado for diferente do conjunto oficial completo
+        let globalBucket: MonthBucket;
+        if (sameIds(meta.serviceIds, meta.allOfficialIds)) {
+          globalBucket = buckets[buckets.length - 1];
+        } else {
+          globalBucket = await fetchMonthBucket(meta.currMonth, meta.generatedAt, meta.allOfficialIds);
+          tick();
+        }
+
+        // 3) cálculo final — só matemática sobre os buckets já coletados, sem I/O à Digisac
+        const computeBody: DashboardComputeRequest = {
+          generatedAt: meta.generatedAt,
+          filters: meta.filters,
+          pricing: meta.pricing,
+          fx: meta.fx,
+          ruleStartsAt: meta.ruleStartsAt,
+          ruleActiveNow: meta.ruleActiveNow,
+          months: meta.months,
+          buckets,
+          globalBucket,
+          allOfficialCount: meta.allOfficialIds.length,
+        };
+        const computeRes = await apiFetch("/api/dashboard/compute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(computeBody),
+          cache: "no-store",
+        });
+        const computeText = await computeRes.text();
+        let json: any;
+        try {
+          json = JSON.parse(computeText);
+        } catch {
+          throw new Error("Falha ao calcular o painel. Tente atualizar a página.");
+        }
+        if (!computeRes.ok) throw new Error(json.error || `HTTP ${computeRes.status}`);
         setData(json);
       } catch (e: any) {
         setErr(e?.message || "Falha ao carregar.");
         setData(null);
       } finally {
         setLoading(false);
+        setProgress(null);
       }
     },
     [type, connection],
@@ -97,7 +211,7 @@ export default function Dashboard() {
       {loading && !data && (
         <div className="state">
           <span className="pulse" />
-          Consultando…
+          {progress ? `Consultando meses… ${progress.done}/${progress.total}` : "Consultando…"}
         </div>
       )}
 
