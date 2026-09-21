@@ -3,6 +3,7 @@ import { getCredsFromRequest } from "@/lib/session";
 import {
   averageMix,
   costOf,
+  FREE_SERVICE_MESSAGES_PER_NUMBER,
   nextMonths,
   projectTrend,
   projectVolume,
@@ -90,6 +91,9 @@ export async function POST(req: Request) {
     const nowIso = generatedAt;
     const isOfficial = filters.isOfficial;
     const currMonth = months[months.length - 1];
+    // franquia de mensagem de serviço grátis (1000/número/mês) só se aplica
+    // se a seleção for de conexões oficiais — Standard não tem custo mesmo
+    const wabaCount = isOfficial ? filters.serviceIds.length : 0;
 
     const rates: Rates = {
       serviceRateBrl: pricing.serviceRateBrl,
@@ -99,24 +103,24 @@ export async function POST(req: Request) {
 
     // ---- custo global do mês corrente: TODAS as conexões oficiais, ignora filtros ----
     const serviceChargedNow = ruleActiveAt(nowIso.slice(0, 10));
-    const globalCost = costOf(globalBucket.volume, globalBucket.templateMix, rates, true, serviceChargedNow);
+    const globalCost = costOf(globalBucket.volume, globalBucket.templateMix, rates, true, serviceChargedNow, allOfficialCount);
     const globalProjectedVolume = projectVolume(globalBucket.volume, globalBucket.elapsedRatio);
-    const globalProjected = costOf(globalProjectedVolume, globalBucket.templateMix, rates, true, serviceChargedNow);
-    const globalProjectedIfRule = costOf(globalProjectedVolume, globalBucket.templateMix, rates, true, true);
+    const globalProjected = costOf(globalProjectedVolume, globalBucket.templateMix, rates, true, serviceChargedNow, allOfficialCount);
+    const globalProjectedIfRule = costOf(globalProjectedVolume, globalBucket.templateMix, rates, true, true, allOfficialCount);
 
     const fullHistory: MonthRow[] = buckets.map((b) => {
       const refDay = b.partial ? nowIso.slice(0, 10) : `${b.month}-15`;
       const serviceCharged = ruleActiveAt(refDay);
-      const cost = costOf(b.volume, b.templateMix, rates, isOfficial, serviceCharged);
-      const costIfRule = costOf(b.volume, b.templateMix, rates, isOfficial, true).total;
+      const cost = costOf(b.volume, b.templateMix, rates, isOfficial, serviceCharged, wabaCount);
+      const costIfRule = costOf(b.volume, b.templateMix, rates, isOfficial, true, wabaCount).total;
 
       let projectedVolume = null;
       let projectedCost = null;
       let projectedCostIfRule = null;
       if (b.partial) {
         projectedVolume = projectVolume(b.volume, b.elapsedRatio);
-        projectedCost = costOf(projectedVolume, b.templateMix, rates, isOfficial, serviceCharged);
-        projectedCostIfRule = costOf(projectedVolume, b.templateMix, rates, isOfficial, true).total;
+        projectedCost = costOf(projectedVolume, b.templateMix, rates, isOfficial, serviceCharged, wabaCount);
+        projectedCostIfRule = costOf(projectedVolume, b.templateMix, rates, isOfficial, true, wabaCount).total;
       }
 
       return {
@@ -141,13 +145,15 @@ export async function POST(req: Request) {
 
     // ---- simulação: e se a regra de serviço JÁ estivesse ativa no mês atual? ----
     const currBucket = buckets[buckets.length - 1];
-    const simRealizedCost = costOf(currBucket.volume, currBucket.templateMix, rates, isOfficial, true);
+    const simRealizedCost = costOf(currBucket.volume, currBucket.templateMix, rates, isOfficial, true, wabaCount);
     const simProjectedVolume = projectVolume(currBucket.volume, currBucket.elapsedRatio);
-    const simProjectedCost = costOf(simProjectedVolume, currBucket.templateMix, rates, isOfficial, true);
+    const simProjectedCost = costOf(simProjectedVolume, currBucket.templateMix, rates, isOfficial, true, wabaCount);
 
     // ---- simulação: e se essas conexões Standard fossem oficiais (WABA)? ----
-    const standardAsOfficialNow = costOf(currBucket.volume, currBucket.templateMix, rates, true, true);
-    const standardAsOfficialProjected = costOf(simProjectedVolume, currBucket.templateMix, rates, true, true);
+    // cada conexão Standard selecionada viraria um número WABA com franquia própria
+    const standardCount = filters.serviceIds.length;
+    const standardAsOfficialNow = costOf(currBucket.volume, currBucket.templateMix, rates, true, true, standardCount);
+    const standardAsOfficialProjected = costOf(simProjectedVolume, currBucket.templateMix, rates, true, true, standardCount);
 
     // ---- projeção: tendência linear (mínimos quadrados) sobre os últimos meses completos ----
     const completeBuckets = buckets.filter((b) => !b.partial && !b.unavailable);
@@ -163,9 +169,9 @@ export async function POST(req: Request) {
         month: m,
         label: label(m),
         volume: v,
-        cost: costOf(v, forecastMix, rates, isOfficial, serviceCharged),
-        costIfRule: costOf(v, forecastMix, rates, isOfficial, true).total,
-        costAsOfficial: costOf(v, forecastMix, rates, true, true).total,
+        cost: costOf(v, forecastMix, rates, isOfficial, serviceCharged, wabaCount),
+        costIfRule: costOf(v, forecastMix, rates, isOfficial, true, wabaCount).total,
+        costAsOfficial: costOf(v, forecastMix, rates, true, true, standardCount).total,
         templateByCategory: templateByCategory(v, forecastMix),
         serviceCharged,
       };
@@ -205,6 +211,7 @@ export async function POST(req: Request) {
       fx,
       ruleStartsAt,
       ruleActiveNow,
+      freeServiceMessagesPerNumber: FREE_SERVICE_MESSAGES_PER_NUMBER,
       monthGlobal: {
         month: currMonth,
         label: label(currMonth),

@@ -81,6 +81,8 @@ export type DashboardPayload = {
   fx: { rate: number; source: string; asOf: string };
   ruleStartsAt: string; // "2026-10-01"
   ruleActiveNow: boolean;
+  /** franquia de mensagens de serviço grátis por número WABA/mês aplicada no cálculo — valor não confirmado na doc oficial da Meta, ver nota */
+  freeServiceMessagesPerNumber: number;
   /** custo do mês corrente somando TODAS as conexões oficiais — não muda com filtros */
   monthGlobal: {
     month: string;

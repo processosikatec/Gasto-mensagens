@@ -91,8 +91,8 @@ export async function GET(req: Request) {
       currMonth,
       months,
       pricing: {
-        serviceRateBrl: pricing.serviceRateUsd * fx.rate,
-        marketingRateBrl: pricing.marketingRateUsd * fx.rate,
+        serviceRateBrl: pricing.serviceRateBrl,
+        marketingRateBrl: pricing.marketingRateBrl,
         serviceRateUsd: pricing.serviceRateUsd,
         marketingRateUsd: pricing.marketingRateUsd,
         source: pricing.source,

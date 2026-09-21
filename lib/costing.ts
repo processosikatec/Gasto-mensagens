@@ -10,11 +10,13 @@
 //      · categoria UTILITY/AUTH -> serviceRateBrl (mesma tarifa)
 
 import type { TemplateMix, Volume } from "./digisac";
+import { BR_UTILITY_AUTH_TIERS, tieredCost } from "./meta-pricing";
 
 export const RULE_STARTS_AT = "2026-10-01";
 
 export type Rates = {
-  serviceRateBrl: number; // utility/auth = tarifa que serviço assume em out/2026
+  /** tarifa list rate (sem tier) de utility/auth/service — usada só como referência/exibição; o cálculo real usa BR_UTILITY_AUTH_TIERS */
+  serviceRateBrl: number;
   marketingRateBrl: number;
 };
 
@@ -29,10 +31,20 @@ export function ruleActiveAt(refIso: string): boolean {
   return refIso.slice(0, 10) >= RULE_STARTS_AT;
 }
 
-/** Custo de um bloco de templates dado o mix de categoria. */
+/**
+ * Custo de um bloco de templates dado o mix de categoria. Marketing é tarifa
+ * fixa; utility/authentication usam os volume tiers oficiais do Brasil
+ * (progressivo, aplicado sobre o volume estimado de templates utility+auth
+ * deste bloco — simplificação: a Meta soma todo volume utility/auth da conta
+ * no mês, incluindo mensagem de serviço cobrada como utility; aqui cada
+ * bloco — templates e serviço — tieriza separadamente, o que superestima
+ * levemente o custo em contas de volume alto, já que cada bloco reinicia do
+ * tier 1 em vez de continuar a progressão do outro).
+ */
 export function templateCost(count: number, mix: TemplateMix, rates: Rates): number {
   const mkt = count * mix.marketing * rates.marketingRateBrl;
-  const util = count * (mix.utility + mix.authentication) * rates.serviceRateBrl;
+  const utilAuthCount = count * (mix.utility + mix.authentication);
+  const util = tieredCost(utilAuthCount, BR_UTILITY_AUTH_TIERS);
   return mkt + util;
 }
 
@@ -53,12 +65,33 @@ export function templateByCategory(volume: Volume, mix: TemplateMix): TemplateBy
   };
 }
 
+// Franquia mensal de mensagens de serviço grátis por número WABA — valor
+// citado em material de terceiros/agregadores, NÃO confirmado na documentação
+// técnica oficial da Meta (developers.facebook.com/documentation/
+// business-messaging/whatsapp/pricing/non-template-messages, consultada em
+// 21/09/2026, afirma explicitamente "Meta does not offer volume tiers for
+// service messages" e não menciona franquia gratuita). A doc de analytics
+// menciona "FREE_TIER" como categoria de CONVERSA, não mensagem individual, e
+// confirma a existência de volume tiers reais por mercado×categoria sem
+// valores publicados. Mantido como aproximação a pedido — revisar quando a
+// Meta publicar a tabela oficial de tarifas do Brasil.
+export const FREE_SERVICE_MESSAGES_PER_NUMBER = 1000;
+
 /**
  * @param volume volumetria do período
  * @param mix    proporção de categoria dos templates do período
  * @param rates  tarifas em BRL
  * @param isOfficial conexão(ões) via API oficial da Meta? Standard => tudo R$ 0
  * @param serviceCharged a regra de cobrança de serviço vale para o período?
+ * @param wabaCount quantidade de números WABA no escopo — cada um dá direito a
+ *   FREE_SERVICE_MESSAGES_PER_NUMBER mensagens de serviço grátis/mês. A
+ *   franquia é aplicada de forma agregada (soma do volume de serviço do
+ *   conjunto menos a soma das franquias) — é uma aproximação: se um número
+ *   individual usar menos que sua franquia, o excedente não é "transferível"
+ *   para outro número na conta real da Meta, mas aqui a soma agregada tem o
+ *   mesmo efeito na prática, desde que a maioria dos números use volume
+ *   relevante (caso comum). Templates nunca têm franquia — são cobrados desde
+ *   sempre, sem isenção.
  */
 export function costOf(
   volume: Volume,
@@ -66,12 +99,14 @@ export function costOf(
   rates: Rates,
   isOfficial: boolean,
   serviceCharged: boolean,
+  wabaCount = 0,
 ): CostBreakdown {
   if (!isOfficial) return { service: 0, template: 0, total: 0 };
 
-  const service = serviceCharged
-    ? (volume.service + volume.campaignFreeform) * rates.serviceRateBrl
-    : 0;
+  const serviceVolume = volume.service + volume.campaignFreeform;
+  const freeQuota = wabaCount * FREE_SERVICE_MESSAGES_PER_NUMBER;
+  const billableServiceVolume = Math.max(0, serviceVolume - freeQuota);
+  const service = serviceCharged ? tieredCost(billableServiceVolume, BR_UTILITY_AUTH_TIERS) : 0;
   const template =
     templateCost(volume.template, mix, rates) +
     templateCost(volume.campaignTemplate, mix, rates);

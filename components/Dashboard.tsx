@@ -415,25 +415,29 @@ export default function Dashboard() {
                   Templates já são cobrados hoje.
                 </li>
                 <li>
-                  <b>Tarifa:</b>{" "}
-                  {data.pricing.source === "scrape"
-                    ? "obtida de agregador público"
-                    : data.pricing.source === "env-override"
-                      ? "definida manualmente (.env.local)"
-                      : "tabela embutida"}
-                  , referência de {data.pricing.asOf}. Serviço, utility e authentication a{" "}
-                  {brl4(data.pricing.serviceRateBrl)} por mensagem; marketing a{" "}
-                  {brl4(data.pricing.marketingRateBrl)} por mensagem. Câmbio USD→BRL{" "}
-                  {data.fx.rate.toFixed(4)} ({data.fx.source}).{" "}
-                  {data.pricing.sourceUrl ? (
-                    <a href={data.pricing.sourceUrl} target="_blank" rel="noreferrer">
-                      Ver origem
-                    </a>
-                  ) : null}
+                  <b>Franquia de {num(data.freeServiceMessagesPerNumber)} mensagens/número:</b>{" "}
+                  o cálculo desconta {num(data.freeServiceMessagesPerNumber)} mensagens de serviço
+                  grátis por mês para cada número WABA selecionado, antes de aplicar a tarifa.{" "}
+                  <b>Este valor não está confirmado na documentação técnica oficial da Meta</b> —
+                  vem de material de terceiros; a doc oficial (developers.facebook.com) afirma não
+                  haver desconto por volume para mensagens de serviço. Trate como estimativa até a
+                  Meta publicar a tabela definitiva.
                 </li>
                 <li>
-                  Conexões Standard (WhatsApp Web) não geram custo. Os valores oficiais da Meta por
-                  país só são publicados até 01/09/2026 — confirme sempre contra a fatura da Digisac.
+                  <b>Tarifa:</b>{" "}
+                  {data.pricing.source === "env-override"
+                    ? "definida manualmente (.env.local)"
+                    : "rate card oficial da Meta, valores em BRL fixos"}
+                  , referência de {data.pricing.asOf}. Marketing a{" "}
+                  {brl4(data.pricing.marketingRateBrl)} por mensagem (tarifa fixa, sem desconto por
+                  volume). Serviço, utility e authentication começam em{" "}
+                  {brl4(data.pricing.serviceRateBrl)} por mensagem e caem progressivamente conforme o
+                  volume mensal sobe (volume tiers oficiais do Brasil — como faixas de imposto de
+                  renda: cada faixa de volume paga sua própria tarifa).
+                </li>
+                <li>
+                  Conexões Standard (WhatsApp Web) não geram custo. Confirme sempre os valores contra
+                  a fatura da Digisac/Meta.
                 </li>
                 <li>
                   <button type="button" className="login-signout" onClick={openDebugServices}>

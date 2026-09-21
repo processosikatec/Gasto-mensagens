@@ -1,22 +1,33 @@
 // Tarifa Meta / WhatsApp Business para o Brasil (server-only).
 //
 // Contexto: a partir de 01/10/2026 a Meta passa a cobrar por mensagem de serviço
-// (free-form, humano OU AI de terceiro) e por template de utilidade dentro da janela
-// de 24h. A tarifa e a MESMA da utility/authentication do pais. Numeros oficiais
-// por pais so publicados ate 01/09/2026.
+// (free-form, humano OU AI de terceiro). A tarifa é a MESMA da utility/
+// authentication do país (rate card oficial confirma isso explicitamente).
 //
-// Estrategia de obtencao (sem depender de editar o front):
-//   1. override manual via env META_SERVICE_RATE_USD
-//   2. scrape de agregadores publicos que republicam a rate card da Meta
-//   3. fallback embutido (rate card de jul/2026, fonte consistente entre varias refs)
+// Fonte: rate card oficial da Meta "Cost per message in BRL on the WhatsApp
+// Business Platform, effective October 1, 2026" (PDF oficial, valores já em
+// BRL — não depende de câmbio do dia). Volume tiers de utility/authentication
+// confirmados como PROGRESSIVOS (como faixas de IR: cada faixa de volume paga
+// sua própria tarifa só sobre o volume que cai nela, não retroativo) via
+// developers.facebook.com/documentation/business-messaging/whatsapp/pricing —
+// "the rate of the next tier [applies] specifically for messages in that tier".
+// Marketing não tem tier — tarifa fixa (list rate) sempre.
+//
+// Override manual continua disponível via env META_SERVICE_RATE_USD, para o
+// caso de a Meta revisar os valores antes do próximo deploy.
 
-export type PricingSource = "env-override" | "scrape" | "fallback";
+export type PricingSource = "env-override" | "brl-fixed";
 
 export type MetaPricing = {
-  /** USD por mensagem entregue — categoria utility/authentication BR = tarifa que
-   *  a msg de serviço assume em 01/10/2026 */
+  /** USD por mensagem entregue — mantido só para compatibilidade com o
+   *  payload público (`pricing.serviceRateUsd`); o cálculo real usa BRL fixo,
+   *  ver `serviceRateBrl`/`marketingRateBrl` */
   serviceRateUsd: number;
   marketingRateUsd: number;
+  /** tarifa BRL de utility/auth/service Brasil sem tier (list rate) */
+  serviceRateBrl: number;
+  /** tarifa BRL de marketing Brasil (sem tier) */
+  marketingRateBrl: number;
   source: PricingSource;
   sourceUrl?: string;
   /** data de referencia da tabela */
@@ -24,79 +35,52 @@ export type MetaPricing = {
   note: string;
 };
 
-const FALLBACK: MetaPricing = {
-  serviceRateUsd: 0.0068, // utility/auth Brasil — consistente entre Meta rate card e agregadores
-  marketingRateUsd: 0.0625,
-  source: "fallback",
-  asOf: "2026-07-01",
-  note: "Rate card Meta jul/2026 (embutido). A tarifa de serviço passa a valer 01/10/2026 e iguala a de utility/auth.",
-};
+/** Faixa de volume tier: mensagens de `from` a `to` (exclusivo do topo, null = sem limite) pagam `rateBrl`. */
+export type VolumeTier = { from: number; to: number | null; rateBrl: number };
 
-const SCRAPE_TARGETS = [
-  "https://whautomate.com/whatsapp-business-api-pricing-brazil",
-  "https://www.go4whatsup.com/brazil/whatsapp-business-api-pricing/",
+// Volume tiers oficiais do Brasil para utility/authentication (idênticos entre
+// as duas categorias na rate card oficial). Marketing não tem tier.
+export const BR_UTILITY_AUTH_TIERS: VolumeTier[] = [
+  { from: 0, to: 250_000, rateBrl: 0.035 },
+  { from: 250_000, to: 2_000_000, rateBrl: 0.0333 },
+  { from: 2_000_000, to: 17_000_000, rateBrl: 0.0315 },
+  { from: 17_000_000, to: 35_000_000, rateBrl: 0.0298 },
+  { from: 35_000_000, to: 70_000_000, rateBrl: 0.028 },
+  { from: 70_000_000, to: null, rateBrl: 0.0263 },
 ];
 
-// procura, na vizinhanca da palavra "utility"/"marketing", um preco USD com 3-4
-// casas decimais (ex: $0.0068). Ignora numeros com 2 casas (podem ser R$0,04 ou %).
-function extractRates(html: string): { utilityUsd?: number; marketingUsd?: number } {
-  const clean = html
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#36;/g, "$")
-    .replace(/\s+/g, " ");
-
-  const near = (label: RegExp, lo: number, hi: number): number | undefined => {
-    const re = new RegExp(label.source, "gi");
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(clean))) {
-      const w = clean.slice(m.index, m.index + 180);
-      // exige US$ / USD / $ (NAO R$) seguido de 0.xxxx com 3-4 digitos.
-      // 3-4 casas descarta "R$0,04" (2 casas). "(?<!R)" evita casar o $ de R$.
-      const usd = w.match(/(?:US\$|USD\s*|(?<![A-Za-z])\$)\s*(0?\.\d{3,4})(?!\d)/);
-      if (usd) {
-        const v = Number(usd[1]);
-        if (v >= lo && v <= hi) return v;
-      }
-    }
-    return undefined;
-  };
-
-  return {
-    utilityUsd: near(/utilit(?:y|ário|ária)/, 0.001, 0.02),
-    marketingUsd: near(/marketing/, 0.02, 0.15),
-  };
-}
-
-async function tryScrape(): Promise<MetaPricing | null> {
-  for (const url of SCRAPE_TARGETS) {
-    try {
-      const res = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; PainelGastos/1.0)" },
-        next: { revalidate: 60 * 60 * 12 },
-      });
-      if (!res.ok) continue;
-      const html = await res.text();
-      const { utilityUsd, marketingUsd } = extractRates(html);
-      if (utilityUsd && utilityUsd >= 0.001 && utilityUsd <= 0.02) {
-        return {
-          serviceRateUsd: utilityUsd,
-          marketingRateUsd: marketingUsd && marketingUsd > 0 ? marketingUsd : FALLBACK.marketingRateUsd,
-          source: "scrape",
-          sourceUrl: url,
-          asOf: new Date().toISOString().slice(0, 10),
-          note: "Tarifa lida de agregador publico que republica a rate card da Meta. Confirme contra a fatura da Digisac.",
-        };
-      }
-    } catch {
-      // proximo alvo
-    }
+/**
+ * Custo progressivo (por faixa, como IR) de `count` mensagens sobre `tiers`.
+ * As primeiras mensagens pagam a tarifa da 1ª faixa, o excedente vai caindo
+ * nas faixas seguintes conforme o volume cresce — nunca retroativo.
+ */
+export function tieredCost(count: number, tiers: VolumeTier[]): number {
+  let remaining = count;
+  let total = 0;
+  for (const tier of tiers) {
+    if (remaining <= 0) break;
+    const capacity = tier.to === null ? Infinity : tier.to - tier.from;
+    const used = Math.min(remaining, capacity);
+    total += used * tier.rateBrl;
+    remaining -= used;
   }
-  return null;
+  return total;
 }
 
-let cache: { at: number; data: MetaPricing } | null = null;
-const TTL = 1000 * 60 * 60 * 6;
+const BR_MARKETING_RATE_BRL = 0.3217;
+
+const FALLBACK: MetaPricing = {
+  serviceRateUsd: 0.0068,
+  marketingRateUsd: 0.0625,
+  serviceRateBrl: 0.035,
+  marketingRateBrl: BR_MARKETING_RATE_BRL,
+  source: "brl-fixed",
+  asOf: "2026-10-01",
+  note:
+    "Rate card oficial da Meta, efetiva 01/10/2026 (valores em BRL, sem depender de câmbio). " +
+    "Utility/authentication/service têm volume tiers progressivos aplicados sobre o volume mensal " +
+    "real do cliente; marketing é tarifa fixa.",
+};
 
 export async function getMetaPricing(): Promise<MetaPricing> {
   const override = Number(process.env.META_SERVICE_RATE_USD);
@@ -104,19 +88,18 @@ export async function getMetaPricing(): Promise<MetaPricing> {
     return {
       serviceRateUsd: override,
       marketingRateUsd: FALLBACK.marketingRateUsd,
+      serviceRateBrl: FALLBACK.serviceRateBrl,
+      marketingRateBrl: FALLBACK.marketingRateBrl,
       source: "env-override",
       asOf: new Date().toISOString().slice(0, 10),
-      note: "Tarifa definida manualmente em META_SERVICE_RATE_USD (.env.local).",
+      note: "Tarifa de serviço USD definida manualmente em META_SERVICE_RATE_USD (.env.local); demais valores usam o fallback BRL fixo.",
     };
   }
-  if (cache && Date.now() - cache.at < TTL) return cache.data;
-  const scraped = await tryScrape();
-  const data = scraped ?? FALLBACK;
-  cache = { at: Date.now(), data };
-  return data;
+  return FALLBACK;
 }
 
-// ---- cambio USD -> BRL ----
+// ---- cambio USD -> BRL (informativo — não afeta mais o cálculo de custo, ver acima) ----
+const TTL = 1000 * 60 * 60 * 6;
 let fxCache: { at: number; rate: number; source: string } | null = null;
 
 export async function getUsdBrl(): Promise<{ rate: number; source: string; asOf: string }> {
