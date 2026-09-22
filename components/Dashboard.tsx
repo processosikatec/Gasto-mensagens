@@ -296,11 +296,11 @@ export default function Dashboard() {
               sub={
                 ind.unavailable
                   ? "Dados indisponíveis — tente atualizar a página"
-                  : `Realizado ${num(ind.monthSentTotal)} · ${Math.round(
-                      cur.elapsedRatio * 100,
-                    )}% do mês`
+                  : `Realizado ${num(ind.monthSentTotal)} (${num(ind.monthSent)} serviço + ${num(
+                      ind.monthSentTotal - ind.monthSent,
+                    )} template) · ${Math.round(cur.elapsedRatio * 100)}% do mês`
               }
-              info="Total de mensagens enviadas (serviço + templates + campanhas) no mês corrente: realizado até agora e projeção de fechamento pró-rata."
+              info="Total de mensagens enviadas (serviço + templates + campanhas) no mês corrente: realizado até agora e projeção de fechamento pró-rata. Só o volume de serviço (sem template) entra na franquia/tarifa do card 'Só mensagens de serviço'."
             />
             <InfoCard
               accent="danger"
