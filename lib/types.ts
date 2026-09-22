@@ -122,6 +122,10 @@ export type DashboardPayload = {
     // simulação: mês atual como se a regra de serviço (01/10/2026) já valesse
     monthCostIfRuleActive: number; // custo realizado até agora, cobrando o serviço
     monthProjectedCostIfRuleActive: number; // fechamento estimado, cobrando o serviço
+    /** só a parcela de mensagem de serviço (sem templates), realizada até agora — valor novo introduzido pela regra */
+    monthServiceCostIfRuleActive: number;
+    /** idem, fechamento estimado do mês (pró-rata) */
+    monthProjectedServiceCostIfRuleActive: number;
     // simulação: conexão(ões) Standard como se fossem oficiais (WABA), serviço sempre cobrado
     monthCostIfOfficial: number;
     monthProjectedCostIfOfficial: number;

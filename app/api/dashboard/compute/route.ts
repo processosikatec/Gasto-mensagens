@@ -197,6 +197,12 @@ export async function POST(req: Request) {
       monthProjectedCost: current.projectedCost?.total ?? current.cost.total,
       monthCostIfRuleActive: simRealizedCost.total,
       monthProjectedCostIfRuleActive: current.partial ? simProjectedCost.total : simRealizedCost.total,
+      // só a parcela de mensagem de serviço (atendimento), separada de templates —
+      // é o valor novo introduzido pela regra de 01/10/2026, tarifa base R$0,035
+      monthServiceCostIfRuleActive: simRealizedCost.service, // realizado até agora
+      monthProjectedServiceCostIfRuleActive: current.partial // fechamento estimado do mês
+        ? simProjectedCost.service
+        : simRealizedCost.service,
       monthCostIfOfficial: standardAsOfficialNow.total,
       monthProjectedCostIfOfficial: current.partial
         ? standardAsOfficialProjected.total

@@ -8,6 +8,14 @@
 //  - Template (avulso + campanha): já cobrado hoje.
 //      · categoria MARKETING  -> marketingRateBrl
 //      · categoria UTILITY/AUTH -> serviceRateBrl (mesma tarifa)
+//
+// Limitação conhecida, não implementada: a Meta também isenta conversas de
+// serviço iniciadas via "free entry point" (clique-para-WhatsApp / botão do
+// Facebook) por 72h — o simulador oficial da Digisac pede ao usuário o % de
+// conversas nessa origem para descontar. Nosso cálculo não diferencia a
+// origem da conversa (a API Digisac não expõe isso de forma direta em
+// `/api/v1/messages`), então TODA mensagem de serviço é cobrada igual —
+// pode superestimar o custo em contas com volume relevante de FEP.
 
 import type { TemplateMix, Volume } from "./digisac";
 import { BR_UTILITY_AUTH_TIERS, tieredCost } from "./meta-pricing";
@@ -65,16 +73,18 @@ export function templateByCategory(volume: Volume, mix: TemplateMix): TemplateBy
   };
 }
 
-// Franquia mensal de mensagens de serviço grátis por número WABA — valor
-// citado em material de terceiros/agregadores, NÃO confirmado na documentação
-// técnica oficial da Meta (developers.facebook.com/documentation/
-// business-messaging/whatsapp/pricing/non-template-messages, consultada em
-// 21/09/2026, afirma explicitamente "Meta does not offer volume tiers for
-// service messages" e não menciona franquia gratuita). A doc de analytics
-// menciona "FREE_TIER" como categoria de CONVERSA, não mensagem individual, e
-// confirma a existência de volume tiers reais por mercado×categoria sem
-// valores publicados. Mantido como aproximação a pedido — revisar quando a
-// Meta publicar a tabela oficial de tarifas do Brasil.
+// Franquia mensal de mensagens de serviço grátis por número WABA. Confirmada
+// pelo simulador oficial da própria Digisac (digisac.com.br/conteudos/
+// simulador-de-custos-whatsapp, consultado em 22/09/2026): "A Meta concede
+// uma franquia de 1.000 mensagens gratuitas por número de WhatsApp, por mês
+// ... a partir da 1.001ª mensagem de cada número. A franquia não é
+// cumulativa" — bate com o valor já usado aqui. A doc técnica genérica da
+// Meta (developers.facebook.com/documentation/business-messaging/whatsapp/
+// pricing/non-template-messages, consultada em 21/09/2026) não menciona essa
+// franquia explicitamente ("Meta does not offer volume tiers for service
+// messages"), mas trata de volume tiers de tarifa, não da franquia inicial —
+// não é necessariamente contraditório. Duas fontes independentes (Digisac +
+// material de terceiros anterior) convergem no mesmo número.
 export const FREE_SERVICE_MESSAGES_PER_NUMBER = 1000;
 
 /**

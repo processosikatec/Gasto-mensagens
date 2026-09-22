@@ -342,6 +342,17 @@ export default function Dashboard() {
                 " Já considera a mensagem de serviço cobrada a partir de 01/10/2026."
               }
             />
+            <InfoCard
+              accent="danger"
+              label="Só mensagens de serviço (regra ativa)"
+              value={ind.unavailable ? "—" : brl(ind.monthProjectedServiceCostIfRuleActive)}
+              sub={
+                ind.unavailable
+                  ? "Dados indisponíveis — tente atualizar a página"
+                  : `${num(ind.monthSent)} msgs de serviço · realizado ${brl(ind.monthServiceCostIfRuleActive)}`
+              }
+              info={`Custo isolado das mensagens de serviço (atendimento livre, sem template) do mês. Templates NÃO têm franquia — já são cobrados desde sempre; a franquia de ${num(data.freeServiceMessagesPerNumber)} msgs grátis por número WABA vale só para este número. A partir de ${brl4(data.pricing.serviceRateBrl)}/mensagem, com volume tiers já descontados. "Realizado" é o valor até agora no mês; o valor principal do card é o fechamento estimado (pró-rata).`}
+            />
           </div>
 
           {/* Gráfico principal — o centro da leitura */}
@@ -417,11 +428,9 @@ export default function Dashboard() {
                 <li>
                   <b>Franquia de {num(data.freeServiceMessagesPerNumber)} mensagens/número:</b>{" "}
                   o cálculo desconta {num(data.freeServiceMessagesPerNumber)} mensagens de serviço
-                  grátis por mês para cada número WABA selecionado, antes de aplicar a tarifa.{" "}
-                  <b>Este valor não está confirmado na documentação técnica oficial da Meta</b> —
-                  vem de material de terceiros; a doc oficial (developers.facebook.com) afirma não
-                  haver desconto por volume para mensagens de serviço. Trate como estimativa até a
-                  Meta publicar a tabela definitiva.
+                  grátis por mês para cada número WABA selecionado, antes de aplicar a tarifa —
+                  a partir da mensagem seguinte a essa franquia, por número, que não é cumulativa
+                  entre números. Confirmado no simulador oficial da Digisac.
                 </li>
                 <li>
                   <b>Tarifa:</b>{" "}
@@ -438,6 +447,12 @@ export default function Dashboard() {
                 <li>
                   Conexões Standard (WhatsApp Web) não geram custo. Confirme sempre os valores contra
                   a fatura da Digisac/Meta.
+                </li>
+                <li>
+                  <b>Não considerado:</b> a Meta também isenta por 72h conversas de serviço
+                  iniciadas via clique-para-WhatsApp/botão do Facebook (free entry point) — o
+                  cálculo aqui cobra toda mensagem de serviço igual, sem diferenciar a origem da
+                  conversa.
                 </li>
                 <li>
                   <button type="button" className="login-signout" onClick={openDebugServices}>
