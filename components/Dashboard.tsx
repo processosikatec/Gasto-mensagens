@@ -53,9 +53,14 @@ const BRL4 = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 4,
 });
 const NUM = new Intl.NumberFormat("pt-BR");
+const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const brl = (x: number) => BRL.format(x || 0);
 const brl4 = (x: number) => BRL4.format(x || 0);
 const num = (x: number) => NUM.format(Math.round(x || 0));
+const usd = (x: number) => USD.format(x || 0);
+/** "R$ X (US$ Y)" — Y calculado a partir da cotação do dia (data.fx.rate) */
+const brlUsd = (brlValue: number, fxRate: number) =>
+  fxRate > 0 ? `${brl(brlValue)} (${usd(brlValue / fxRate)})` : brl(brlValue);
 
 type FilterType = "todas" | "oficial" | "standard";
 
@@ -228,7 +233,7 @@ export default function Dashboard() {
           <div className="month-bill">
             <span className="dot" />
             <span className="mb-label">
-              Gasto de {cap(cur.label)} · {data.monthGlobal.officialConnections} conexões oficiais
+              Gasto realizado em {cap(cur.label)} · {data.monthGlobal.officialConnections} conexões oficiais
             </span>
             {data.monthGlobal.unavailable ? (
               <span className="mb-val" style={{ color: "var(--danger, #b3261e)" }}>
@@ -236,16 +241,16 @@ export default function Dashboard() {
               </span>
             ) : (
               <>
-                <span className="mb-val">{brl(data.monthGlobal.costNow)}</span>
+                <span className="mb-val">{brlUsd(data.monthGlobal.costNow, data.fx.rate)}</span>
                 {!data.ruleActiveNow && (
                   <span className="mb-proj">
                     Com a regra ativa:{" "}
-                    <b>{brl(data.monthGlobal.costProjectedIfRuleActive)}</b>
+                    <b>{brlUsd(data.monthGlobal.costProjectedIfRuleActive, data.fx.rate)}</b>
                   </span>
                 )}
                 {data.monthGlobal.elapsedRatio < 0.98 && (
                   <span className="mb-proj">
-                    Fechamento estimado: {brl(data.monthGlobal.costProjected)}
+                    Fechamento estimado: {brlUsd(data.monthGlobal.costProjected, data.fx.rate)}
                   </span>
                 )}
               </>
@@ -288,7 +293,59 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Resumo — 4 números, batida de olho */}
+          {/* Custo do mês corrente — segregado: Templates x Mensagens de serviço, cada um Realizado x Projetado */}
+          <div className="kpis">
+            <InfoCard
+              accent="danger"
+              label="Templates — realizado"
+              value={ind.unavailable ? "—" : brlUsd(ind.monthTemplateCostNow, data.fx.rate)}
+              sub={
+                ind.unavailable
+                  ? "Dados indisponíveis — tente atualizar a página"
+                  : `${num(ind.monthSentTotal - ind.monthSent)} templates enviados · já cobrado hoje`
+              }
+              info="Custo já gasto até agora no mês com templates (HSM), avulsos ou por campanha — não inclui mensagem de serviço. Templates são cobrados desde sempre, sem franquia, por categoria (marketing/utility/authentication)."
+            />
+            <InfoCard
+              accent="danger"
+              label="Templates — projetado"
+              value={ind.unavailable ? "—" : brlUsd(ind.monthProjectedTemplateCost, data.fx.rate)}
+              sub={
+                ind.unavailable
+                  ? "Dados indisponíveis — tente atualizar a página"
+                  : `Fechamento estimado · ${Math.round(cur.elapsedRatio * 100)}% do mês decorrido`
+              }
+              info="Fechamento estimado (pró-rata) do custo de templates do mês corrente, sem mensagem de serviço."
+            />
+            <InfoCard
+              accent="danger"
+              label="Mensagens de serviço — realizado"
+              value={ind.unavailable ? "—" : brlUsd(ind.monthServiceCostIfRuleActive, data.fx.rate)}
+              sub={
+                ind.unavailable
+                  ? "Dados indisponíveis — tente atualizar a página"
+                  : `${num(ind.monthSent)} msgs de serviço · ${
+                      data.ruleActiveNow ? "regra já em vigor" : "simulação — regra entra em " + fmtDate(data.ruleStartsAt)
+                    }`
+              }
+              info={`Custo já gasto até agora com mensagens de serviço (atendimento livre, sem template), simulando a regra de 01/10/2026 ativa. Franquia de ${num(data.freeServiceMessagesPerNumber)} msgs grátis por número WABA já descontada, a partir de ${brl4(data.pricing.serviceRateBrl)}/mensagem, com volume tiers aplicados.`}
+            />
+            <InfoCard
+              accent="danger"
+              label="Mensagens de serviço — projetado"
+              value={ind.unavailable ? "—" : brlUsd(ind.monthProjectedServiceCostIfRuleActive, data.fx.rate)}
+              sub={
+                ind.unavailable
+                  ? "Dados indisponíveis — tente atualizar a página"
+                  : `Fechamento estimado · ${
+                      data.ruleActiveNow ? "regra já em vigor" : "simulação — regra entra em " + fmtDate(data.ruleStartsAt)
+                    }`
+              }
+              info={`Fechamento estimado (pró-rata) do custo de mensagens de serviço do mês corrente, simulando a regra de 01/10/2026 ativa. Mesma franquia e volume tiers do card "realizado", aplicados sobre o volume projetado.`}
+            />
+          </div>
+
+          {/* Volume enviado — abaixo do custo */}
           <div className="kpis">
             <InfoCard
               label={`Enviadas em ${cap(cur.label)}`}
@@ -300,58 +357,7 @@ export default function Dashboard() {
                       ind.monthSentTotal - ind.monthSent,
                     )} template) · ${Math.round(cur.elapsedRatio * 100)}% do mês`
               }
-              info="Total de mensagens enviadas (serviço + templates + campanhas) no mês corrente: realizado até agora e projeção de fechamento pró-rata. Só o volume de serviço (sem template) entra na franquia/tarifa do card 'Só mensagens de serviço'."
-            />
-            <InfoCard
-              accent="danger"
-              label="Custo do mês hoje"
-              value={ind.unavailable ? "—" : brl(ind.monthProjectedCost)}
-              sub={
-                ind.unavailable
-                  ? "Dados indisponíveis — tente atualizar a página"
-                  : data.ruleActiveNow
-                    ? "Serviço + templates"
-                    : `Só templates — serviço grátis até ${fmtDate(data.ruleStartsAt)}`
-              }
-              info="Custo de fechamento estimado do mês corrente com as regras vigentes hoje. Realizado até agora dividido pela fração de dias decorridos."
-            />
-            <InfoCard
-              accent="danger"
-              label="Custo do mês se a regra valesse"
-              value={ind.unavailable ? "—" : brl(ind.monthProjectedCostIfRuleActive)}
-              sub={
-                ind.unavailable
-                  ? "Dados indisponíveis — tente atualizar a página"
-                  : data.ruleActiveNow
-                    ? "Regra já em vigor"
-                    : `+${brl(
-                        ind.monthProjectedCostIfRuleActive - ind.monthProjectedCost,
-                      )} vs. hoje`
-              }
-              info={
-                "Simulação: quanto o mês corrente custaria se a cobrança da mensagem de serviço (01/10/2026) já estivesse ativa, sobre o volume projetado do mês."
-              }
-            />
-            <InfoCard
-              accent="danger"
-              label={`Custo projetado a partir de ${cap(fmtMonthLabel(data.ruleStartsAt.slice(0, 7)))}`}
-              value={brl(data.costAfterRuleBrl)}
-              sub={`Média dos ${data.forecast.length} meses projetados · base ${data.forecastMonthsUsed} meses`}
-              info={
-                data.forecastMethod +
-                " Já considera a mensagem de serviço cobrada a partir de 01/10/2026."
-              }
-            />
-            <InfoCard
-              accent="danger"
-              label="Só mensagens de serviço (regra ativa)"
-              value={ind.unavailable ? "—" : brl(ind.monthProjectedServiceCostIfRuleActive)}
-              sub={
-                ind.unavailable
-                  ? "Dados indisponíveis — tente atualizar a página"
-                  : `${num(ind.monthSent)} msgs de serviço · realizado ${brl(ind.monthServiceCostIfRuleActive)}`
-              }
-              info={`Custo isolado das mensagens de serviço (atendimento livre, sem template) do mês. Templates NÃO têm franquia — já são cobrados desde sempre; a franquia de ${num(data.freeServiceMessagesPerNumber)} msgs grátis por número WABA vale só para este número. A partir de ${brl4(data.pricing.serviceRateBrl)}/mensagem, com volume tiers já descontados. "Realizado" é o valor até agora no mês; o valor principal do card é o fechamento estimado (pró-rata).`}
+              info="Total de mensagens enviadas (serviço + templates + campanhas) no mês corrente: realizado até agora e projeção de fechamento pró-rata. Só o volume de serviço (sem template) entra na franquia/tarifa das mensagens de serviço."
             />
           </div>
 
@@ -478,12 +484,4 @@ function typeLabel(t: string) {
 /** "ago/26" -> "Ago/26" */
 function cap(s: string) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
-}
-/** "2026-10" -> "out/26" */
-function fmtMonthLabel(ym: string) {
-  const [y, m] = ym.split("-");
-  const nome = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"][
-    Number(m) - 1
-  ];
-  return `${nome}/${y.slice(2)}`;
 }

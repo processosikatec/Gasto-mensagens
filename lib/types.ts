@@ -115,10 +115,14 @@ export type DashboardPayload = {
     monthSent: number; // enviadas de serviço (livre, sem template)
     monthReceived: number;
     monthCostNow: number;
+    /** custo de templates isolado (sem mensagem de serviço), realizado até agora */
+    monthTemplateCostNow: number;
     // "Estimativa deste mês" — fechamento projetado
     monthProjectedSent: number;
     monthProjectedReceived: number;
     monthProjectedCost: number;
+    /** idem, fechamento estimado do mês (pró-rata) */
+    monthProjectedTemplateCost: number;
     // simulação: mês atual como se a regra de serviço (01/10/2026) já valesse
     monthCostIfRuleActive: number; // custo realizado até agora, cobrando o serviço
     monthProjectedCostIfRuleActive: number; // fechamento estimado, cobrando o serviço

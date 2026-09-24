@@ -192,9 +192,13 @@ export async function POST(req: Request) {
       monthSent: current.volume.service + current.volume.campaignFreeform,
       monthReceived: current.volume.received,
       monthCostNow: current.cost.total,
+      // custo de templates isolado (sem mensagem de serviço) — templates são
+      // cobrados desde sempre, sem franquia, independente da regra de 01/10/2026
+      monthTemplateCostNow: current.cost.template,
       monthProjectedSent: current.projectedVolume?.sent ?? current.volume.sent,
       monthProjectedReceived: current.projectedVolume?.received ?? current.volume.received,
       monthProjectedCost: current.projectedCost?.total ?? current.cost.total,
+      monthProjectedTemplateCost: current.projectedCost?.template ?? current.cost.template,
       monthCostIfRuleActive: simRealizedCost.total,
       monthProjectedCostIfRuleActive: current.partial ? simProjectedCost.total : simRealizedCost.total,
       // só a parcela de mensagem de serviço (atendimento), separada de templates —
