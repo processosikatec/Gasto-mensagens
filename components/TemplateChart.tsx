@@ -12,14 +12,10 @@ import {
   YAxis,
 } from "recharts";
 import type { DashboardPayload } from "@/lib/types";
+import type { Currency } from "@/lib/currency";
 import { AXIS, C, tooltipStyle } from "./chartTheme";
 
 const NUM = new Intl.NumberFormat("pt-BR");
-const BRL0 = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-  maximumFractionDigits: 0,
-});
 const kNum = (v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v));
 
 // cada categoria com cor bem distinta das outras (não tons próximos de azul)
@@ -35,13 +31,20 @@ const T = {
  * (marketing, utility, authentication — proporção estimada por amostragem),
  * mais uma linha de custo total. Inclui os meses reais e os projetados.
  */
-export default function TemplateChart({ data }: { data: DashboardPayload }) {
+export default function TemplateChart({ data, currency }: { data: DashboardPayload; currency: Currency }) {
+  const conv = (brlValue: number) => (currency === "USD" && data.fx.rate > 0 ? brlValue / data.fx.rate : brlValue);
+  const fmt = new Intl.NumberFormat(currency === "USD" ? "en-US" : "pt-BR", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  });
+
   const hist = data.history.map((h) => ({
     label: h.label,
     marketing: h.templateByCategory.marketing,
     utility: h.templateByCategory.utility,
     authentication: h.templateByCategory.authentication,
-    custo: h.cost.template,
+    custo: conv(h.cost.template),
   }));
 
   const fc = data.forecast.map((f) => ({
@@ -49,7 +52,7 @@ export default function TemplateChart({ data }: { data: DashboardPayload }) {
     marketing: f.templateByCategory.marketing,
     utility: f.templateByCategory.utility,
     authentication: f.templateByCategory.authentication,
-    custo: f.cost.template,
+    custo: conv(f.cost.template),
   }));
 
   const rows = [...hist, ...fc];
@@ -81,13 +84,13 @@ export default function TemplateChart({ data }: { data: DashboardPayload }) {
             tickLine={false}
             axisLine={{ stroke: C.line }}
             width={58}
-            tickFormatter={(v) => BRL0.format(v)}
+            tickFormatter={(v) => fmt.format(v)}
           />
           <Tooltip
             contentStyle={tooltipStyle}
             labelStyle={{ color: C.dim }}
             formatter={(v: any, name: any) =>
-              name === "Custo (R$)" ? [BRL0.format(v), name] : [NUM.format(v), name]
+              String(name).startsWith("Custo") ? [fmt.format(v), name] : [NUM.format(v), name]
             }
           />
           <Legend
@@ -121,7 +124,7 @@ export default function TemplateChart({ data }: { data: DashboardPayload }) {
           <Line
             yAxisId="cost"
             dataKey="custo"
-            name="Custo (R$)"
+            name={`Custo (${currency === "USD" ? "US$" : "R$"})`}
             stroke={T.costLine}
             strokeWidth={2.5}
             dot={{ r: 2.5, fill: T.costLine }}

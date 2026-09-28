@@ -1,11 +1,10 @@
 "use client";
 
 import type { DashboardPayload } from "@/lib/types";
+import { formatMoney, type Currency } from "@/lib/currency";
 
 const NUM = new Intl.NumberFormat("pt-BR");
-const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const n = (x: number) => NUM.format(Math.round(x || 0));
-const r = (x: number) => BRL.format(x || 0);
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 /**
@@ -14,7 +13,8 @@ const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
  * agora, Projeção = fechamento estimado do mês, Custo = realizado → estimado.
  * Meses futuros: volume e custo projetados (linha marcada).
  */
-export default function HistoryTable({ data }: { data: DashboardPayload }) {
+export default function HistoryTable({ data, currency }: { data: DashboardPayload; currency: Currency }) {
+  const r = (x: number) => formatMoney(x, currency, data.fx.rate);
   const rows = data.history;
   const done = rows.filter((h) => !h.partial && !h.unavailable);
   const sum = (f: (h: (typeof rows)[number]) => number) => done.reduce((a, h) => a + f(h), 0);

@@ -3,10 +3,9 @@
 import { useState } from "react";
 import type { DashboardPayload } from "@/lib/types";
 import { apiFetch } from "@/lib/apiClient";
+import { formatMoney, type Currency } from "@/lib/currency";
 
-const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const NUM = new Intl.NumberFormat("pt-BR");
-const brl = (x: number) => BRL.format(x || 0);
 const num = (x: number) => NUM.format(Math.round(x || 0));
 
 type TemplateRanking = { hsmId: string; name: string; category: string; count: number; cost: number };
@@ -19,7 +18,8 @@ const CAT_LABEL: Record<string, string> = {
   OUTRO: "Outro",
 };
 
-export default function RankingsPanel({ data }: { data: DashboardPayload }) {
+export default function RankingsPanel({ data, currency }: { data: DashboardPayload; currency: Currency }) {
+  const brl = (x: number) => formatMoney(x, currency, data.fx.rate);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);

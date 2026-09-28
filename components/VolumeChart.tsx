@@ -14,14 +14,10 @@ import {
   YAxis,
 } from "recharts";
 import type { DashboardPayload } from "@/lib/types";
+import { formatMoney, type Currency } from "@/lib/currency";
 import { AXIS, C, SERIES, tooltipStyle } from "./chartTheme";
 
 const NUM = new Intl.NumberFormat("pt-BR");
-const BRL0 = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-  maximumFractionDigits: 0,
-});
 const kNum = (v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v));
 
 function renderBarLabel(props: any, rows: any[]) {
@@ -52,8 +48,16 @@ function renderBarLabel(props: any, rows: any[]) {
  *   - âmbar "Custo com a regra da Meta": simulação do mesmo volume cobrando
  *     a mensagem de serviço, em todos os meses (passados e futuros).
  */
-export default function VolumeChart({ data }: { data: DashboardPayload }) {
+export default function VolumeChart({ data, currency }: { data: DashboardPayload; currency: Currency }) {
   const ruleMonth = data.ruleStartsAt.slice(0, 7);
+  // rows abaixo guardam custo já convertido para `currency` — os formatadores
+  // (tick/tooltip) só precisam formatar como moeda, sem reconverter.
+  const conv = (brlValue: number) => (currency === "USD" && data.fx.rate > 0 ? brlValue / data.fx.rate : brlValue);
+  const fmt = new Intl.NumberFormat(currency === "USD" ? "en-US" : "pt-BR", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  });
 
   const hist = data.history.map((h) => {
     const projected = h.partial && h.elapsedRatio >= 0.2;
@@ -64,10 +68,11 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
       realizado: projected ? null : enviadas,
       projecao: projected ? enviadas : null,
       isProjection: projected,
-      custo: projected ? h.projectedCost?.total ?? h.cost.total : h.cost.total,
+      custo: conv(projected ? h.projectedCost?.total ?? h.cost.total : h.cost.total),
       custoFut: null as number | null,
-      custoRegra:
+      custoRegra: conv(
         projected && h.projectedCostIfRule != null ? h.projectedCostIfRule : h.costIfRule,
+      ),
     };
   });
 
@@ -78,8 +83,8 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
     projecao: f.volume.sent,
     isProjection: true,
     custo: null as number | null,
-    custoFut: f.cost.total,
-    custoRegra: f.costIfRule,
+    custoFut: conv(f.cost.total),
+    custoRegra: conv(f.costIfRule),
   }));
 
   const rows = [...hist, ...fc];
@@ -117,7 +122,7 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
             tickLine={false}
             axisLine={{ stroke: C.line }}
             width={64}
-            tickFormatter={(v) => BRL0.format(v)}
+            tickFormatter={(v) => fmt.format(v)}
           />
           <Tooltip
             contentStyle={tooltipStyle}
@@ -125,7 +130,7 @@ export default function VolumeChart({ data }: { data: DashboardPayload }) {
             formatter={(v: any, name: any) => {
               if (v == null) return null;
               return String(name).toLowerCase().includes("custo")
-                ? [BRL0.format(v), name]
+                ? [fmt.format(v), name]
                 : [NUM.format(v), "Enviadas"];
             }}
           />

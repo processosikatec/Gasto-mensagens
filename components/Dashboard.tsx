@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { DashboardComputeRequest, DashboardMetaPayload, DashboardPayload, MonthBucket } from "@/lib/types";
 import { apiFetch } from "@/lib/apiClient";
 import { mapWithConcurrency } from "@/lib/concurrency";
+import { formatMoney, type Currency } from "@/lib/currency";
 import InfoCard from "./InfoCard";
 import VolumeChart from "./VolumeChart";
 import TemplateChart from "./TemplateChart";
@@ -53,14 +54,9 @@ const BRL4 = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 4,
 });
 const NUM = new Intl.NumberFormat("pt-BR");
-const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const brl = (x: number) => BRL.format(x || 0);
 const brl4 = (x: number) => BRL4.format(x || 0);
 const num = (x: number) => NUM.format(Math.round(x || 0));
-const usd = (x: number) => USD.format(x || 0);
-/** "R$ X (US$ Y)" — Y calculado a partir da cotação do dia (data.fx.rate) */
-const brlUsd = (brlValue: number, fxRate: number) =>
-  fxRate > 0 ? `${brl(brlValue)} (${usd(brlValue / fxRate)})` : brl(brlValue);
 
 type FilterType = "todas" | "oficial" | "standard";
 
@@ -71,6 +67,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [currency, setCurrency] = useState<Currency>("BRL");
+
+  /** valor em BRL formatado na moeda selecionada (currency), convertendo via data.fx.rate se USD */
+  const money = useCallback(
+    (brlValue: number) => formatMoney(brlValue, currency, data?.fx.rate ?? 0),
+    [currency, data],
+  );
 
   const load = useCallback(
     async (over?: { type?: FilterType; connection?: string }) => {
@@ -241,16 +244,16 @@ export default function Dashboard() {
               </span>
             ) : (
               <>
-                <span className="mb-val">{brlUsd(data.monthGlobal.costNow, data.fx.rate)}</span>
+                <span className="mb-val">{money(data.monthGlobal.costNow)}</span>
                 {!data.ruleActiveNow && (
                   <span className="mb-proj">
                     Com a regra ativa:{" "}
-                    <b>{brlUsd(data.monthGlobal.costProjectedIfRuleActive, data.fx.rate)}</b>
+                    <b>{money(data.monthGlobal.costProjectedIfRuleActive)}</b>
                   </span>
                 )}
                 {data.monthGlobal.elapsedRatio < 0.98 && (
                   <span className="mb-proj">
-                    Fechamento estimado: {brlUsd(data.monthGlobal.costProjected, data.fx.rate)}
+                    Fechamento estimado: {money(data.monthGlobal.costProjected)}
                   </span>
                 )}
               </>
@@ -279,6 +282,17 @@ export default function Dashboard() {
                 ))}
               </select>
             </div>
+            <div className="field">
+              <label>Moeda</label>
+              <button
+                type="button"
+                className="act currency-toggle"
+                onClick={() => setCurrency((c) => (c === "BRL" ? "USD" : "BRL"))}
+                title={`Cotação: ${data ? `1 USD = ${brl(data.fx.rate)}` : "carregando…"}`}
+              >
+                {currency === "BRL" ? "R$ Real" : "US$ Dólar"}
+              </button>
+            </div>
             <button className="act" onClick={() => load()} disabled={loading}>
               {loading ? "…" : "Atualizar"}
             </button>
@@ -287,9 +301,9 @@ export default function Dashboard() {
           {data.filters.type === "standard" && (
             <div className="scopebar">
               Seleção <b>Standard</b>: a Meta não cobra conexões não-oficiais — custo real é{" "}
-              <b>R$ 0</b>. Se virassem <b>oficiais (WABA)</b> hoje, o mês custaria{" "}
-              <b>{brl(ind.monthProjectedCostIfOfficial)}</b> (fechamento estimado) e a média
-              projetada seria <b>{brl(data.costAfterRuleIfOfficialBrl)}</b>/mês.
+              <b>{money(0)}</b>. Se virassem <b>oficiais (WABA)</b> hoje, o mês custaria{" "}
+              <b>{money(ind.monthProjectedCostIfOfficial)}</b> (fechamento estimado) e a média
+              projetada seria <b>{money(data.costAfterRuleIfOfficialBrl)}</b>/mês.
             </div>
           )}
 
@@ -298,7 +312,7 @@ export default function Dashboard() {
             <InfoCard
               accent="danger"
               label="Templates — realizado"
-              value={ind.unavailable ? "—" : brlUsd(ind.monthTemplateCostNow, data.fx.rate)}
+              value={ind.unavailable ? "—" : money(ind.monthTemplateCostNow)}
               sub={
                 ind.unavailable
                   ? "Dados indisponíveis — tente atualizar a página"
@@ -309,7 +323,7 @@ export default function Dashboard() {
             <InfoCard
               accent="danger"
               label="Templates — projetado"
-              value={ind.unavailable ? "—" : brlUsd(ind.monthProjectedTemplateCost, data.fx.rate)}
+              value={ind.unavailable ? "—" : money(ind.monthProjectedTemplateCost)}
               sub={
                 ind.unavailable
                   ? "Dados indisponíveis — tente atualizar a página"
@@ -320,7 +334,7 @@ export default function Dashboard() {
             <InfoCard
               accent="danger"
               label="Mensagens de serviço — realizado"
-              value={ind.unavailable ? "—" : brlUsd(ind.monthServiceCostIfRuleActive, data.fx.rate)}
+              value={ind.unavailable ? "—" : money(ind.monthServiceCostIfRuleActive)}
               sub={
                 ind.unavailable
                   ? "Dados indisponíveis — tente atualizar a página"
@@ -333,7 +347,7 @@ export default function Dashboard() {
             <InfoCard
               accent="danger"
               label="Mensagens de serviço — projetado"
-              value={ind.unavailable ? "—" : brlUsd(ind.monthProjectedServiceCostIfRuleActive, data.fx.rate)}
+              value={ind.unavailable ? "—" : money(ind.monthProjectedServiceCostIfRuleActive)}
               sub={
                 ind.unavailable
                   ? "Dados indisponíveis — tente atualizar a página"
@@ -373,7 +387,7 @@ export default function Dashboard() {
               de serviço já fosse cobrada. Eixo de custo à direita.
             </p>
             <div className="panel">
-              <VolumeChart data={data} />
+              <VolumeChart data={data} currency={currency} />
             </div>
           </section>
 
@@ -386,11 +400,11 @@ export default function Dashboard() {
               meses de histórico.
             </p>
             <div className="panel scroll-x">
-              <HistoryTable data={data} />
+              <HistoryTable data={data} currency={currency} />
             </div>
           </section>
 
-          <RankingsPanel data={data} />
+          <RankingsPanel data={data} currency={currency} />
 
           {/* Detalhes */}
           <details className="details">
@@ -403,7 +417,7 @@ export default function Dashboard() {
                 template no mês.
               </p>
               <div className="panel">
-                <TemplateChart data={data} />
+                <TemplateChart data={data} currency={currency} />
               </div>
 
               <h3>Como os números são obtidos</h3>
