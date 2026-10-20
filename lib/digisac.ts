@@ -16,6 +16,7 @@
 //  - isComment:true                     => comentário interno, não vai pro WhatsApp
 
 import type { DigisacCreds } from "./session";
+import { pickTemplateName, SEM_NOME } from "./templateName.ts";
 
 export type { DigisacCreds };
 
@@ -407,15 +408,15 @@ export async function topTemplates(
     sampleHalf(creds, where, "DESC", half),
   ]);
 
-  const seen = new Map<string, { name: string; category: HsmCategory }>();
+  // A 1ª mensagem vista de um hsmId pode vir sem `hsm` (ou sem nome/categoria);
+  // mensagens posteriores do mesmo hsmId completam o que faltar.
+  const seen = new Map<string, TemplateInfo>();
   for (const m of [...a, ...b]) {
     const hsmId = m?.hsmId;
-    if (!hsmId || seen.has(hsmId)) continue;
-    const cat = String(m?.hsm?.category || "").toUpperCase();
-    seen.set(hsmId, {
-      name: m?.hsm?.internalName || "(sem nome)",
-      category: cat === "MARKETING" || cat === "UTILITY" || cat === "AUTHENTICATION" ? (cat as HsmCategory) : "OUTRO",
-    });
+    if (!hsmId) continue;
+    const info = seen.get(hsmId) ?? { name: null, category: null, hasHsm: false };
+    mergeTemplateInfo(info, m?.hsm);
+    seen.set(hsmId, info);
   }
 
   const ids = [...seen.keys()];
@@ -423,10 +424,54 @@ export async function topTemplates(
     ids.map((hsmId) => countMessages(creds, scopeToServices({ ...ts, type: "hsm", isFromMe: true, hsmId }, serviceIds))),
   );
 
-  return ids
-    .map((hsmId, i) => ({ hsmId, name: seen.get(hsmId)!.name, category: seen.get(hsmId)!.category, count: counts[i] }))
+  const top = ids
+    .map((hsmId, i) => ({ hsmId, count: counts[i] }))
     .sort((x, y) => y.count - x.count)
     .slice(0, limit);
+
+  // Fallback: o include de /messages pode não trazer o hsm. Busca nome/categoria
+  // dos que ficaram sem, numa única chamada; falha (ex.: 403 sem hsm.view) não
+  // derruba o ranking — mantém "(sem nome)"/"OUTRO".
+  const missing = top.map((t) => t.hsmId).filter((id) => {
+    const info = seen.get(id)!;
+    return info.name === null || !info.hasHsm;
+  });
+  if (missing.length > 0) {
+    try {
+      const json = await apiGet(
+        creds,
+        "/api/v1/whatsapp-business-templates",
+        { perPage: String(missing.length), query: JSON.stringify({ where: { id: { $in: missing } } }) },
+        { cache: false },
+      );
+      for (const tpl of (json?.data || []) as any[]) {
+        const info = tpl?.id ? seen.get(tpl.id) : undefined;
+        if (info) mergeTemplateInfo(info, tpl);
+      }
+    } catch {
+      // sem permissão/erro de rede: segue com o que a amostra trouxe
+    }
+  }
+
+  return top.map(({ hsmId, count }) => {
+    const info = seen.get(hsmId)!;
+    return { hsmId, name: info.name ?? SEM_NOME, category: info.category ?? "OUTRO", count };
+  });
+}
+
+type TemplateInfo = { name: string | null; category: HsmCategory | null; hasHsm: boolean };
+
+function toHsmCategory(raw: unknown): HsmCategory | null {
+  const cat = String(raw || "").toUpperCase();
+  return cat === "MARKETING" || cat === "UTILITY" || cat === "AUTHENTICATION" ? cat : null;
+}
+
+/** Preenche só os campos ainda vazios de `info` com os dados de um hsm/template. */
+function mergeTemplateInfo(info: TemplateInfo, hsm: any): void {
+  if (!hsm) return;
+  info.hasHsm = true;
+  info.name ??= pickTemplateName(hsm);
+  info.category ??= toHsmCategory(hsm.category);
 }
 
 // ---------- ranking de campanhas por custo ----------
