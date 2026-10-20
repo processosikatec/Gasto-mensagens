@@ -106,6 +106,11 @@ components/
   `include: ["hsm"]`, estimada por amostragem (a API não permite contar por
   categoria diretamente).
 - `origin: "campaign"` ⇒ mensagem disparada por campanha (livre ou template).
+- Template (`hsm`) tem dois nomes: `name` (nome do template na Meta, obrigatório)
+  e `internalName` (rótulo interno da Digisac, pode vir nulo, vazio
+  ou só com espaços). O painel exibe `internalName` → `name` → "(sem nome)"
+  (`lib/templateName.ts`). Se o `include: ["hsm"]` de `/messages` vier sem o
+  objeto, o ranking busca o nome em `/whatsapp-business-templates` (`id $in`).
 
 ## Ressalvas
 
