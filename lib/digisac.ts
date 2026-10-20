@@ -75,7 +75,7 @@ async function apiGet(
   creds: DigisacCreds,
   path: string,
   params: Record<string, string>,
-  opts: { cache?: boolean } = {},
+  opts: { cache?: boolean; timeoutMs?: number } = {},
 ): Promise<any> {
   const base = creds.baseUrl.replace(/\/$/, "");
   const url = new URL(base + path);
@@ -83,7 +83,7 @@ async function apiGet(
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: "Bearer " + creds.token, Accept: "application/json" },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: AbortSignal.timeout(opts.timeoutMs ?? REQUEST_TIMEOUT_MS),
     ...(opts.cache === false ? { cache: "no-store" as const } : { next: { revalidate: 300 } }),
   });
   const text = await res.text();
@@ -379,6 +379,9 @@ export async function fetchHistory(
 
 // ---------- ranking de templates por volume ----------
 
+/** Timeout da consulta de fallback do ranking: é opcional e roda depois das contagens, não pode pesar no tempo da rota. */
+const TEMPLATE_FALLBACK_TIMEOUT_MS = 5_000;
+
 export type TemplateUsage = {
   hsmId: string;
   name: string;
@@ -414,7 +417,7 @@ export async function topTemplates(
   for (const m of [...a, ...b]) {
     const hsmId = m?.hsmId;
     if (!hsmId) continue;
-    const info = seen.get(hsmId) ?? { name: null, category: null, hasHsm: false };
+    const info = seen.get(hsmId) ?? { name: null, category: null };
     mergeTemplateInfo(info, m?.hsm);
     seen.set(hsmId, info);
   }
@@ -429,12 +432,12 @@ export async function topTemplates(
     .sort((x, y) => y.count - x.count)
     .slice(0, limit);
 
-  // Fallback: o include de /messages pode não trazer o hsm. Busca nome/categoria
-  // dos que ficaram sem, numa única chamada; falha (ex.: 403 sem hsm.view) não
-  // derruba o ranking — mantém "(sem nome)"/"OUTRO".
+  // Fallback: o include de /messages pode não trazer o hsm (ou trazê-lo sem
+  // nome/categoria). Busca os que ficaram incompletos numa única chamada; falha
+  // (ex.: 403 sem hsm.view) não derruba o ranking — mantém "(sem nome)"/"OUTRO".
   const missing = top.map((t) => t.hsmId).filter((id) => {
     const info = seen.get(id)!;
-    return info.name === null || !info.hasHsm;
+    return info.name === null || info.category === null;
   });
   if (missing.length > 0) {
     try {
@@ -442,14 +445,16 @@ export async function topTemplates(
         creds,
         "/api/v1/whatsapp-business-templates",
         { perPage: String(missing.length), query: JSON.stringify({ where: { id: { $in: missing } } }) },
-        { cache: false },
+        { cache: false, timeoutMs: TEMPLATE_FALLBACK_TIMEOUT_MS },
       );
       for (const tpl of (json?.data || []) as any[]) {
         const info = tpl?.id ? seen.get(tpl.id) : undefined;
         if (info) mergeTemplateInfo(info, tpl);
       }
-    } catch {
-      // sem permissão/erro de rede: segue com o que a amostra trouxe
+    } catch (err) {
+      // sem permissão/erro de rede/timeout: segue com o que a amostra trouxe.
+      // Só a mensagem (apiGet não embute corpo nem token nela).
+      console.warn("[topTemplates] fallback templates falhou:", (err as Error)?.message);
     }
   }
 
@@ -459,7 +464,7 @@ export async function topTemplates(
   });
 }
 
-type TemplateInfo = { name: string | null; category: HsmCategory | null; hasHsm: boolean };
+type TemplateInfo = { name: string | null; category: HsmCategory | null };
 
 function toHsmCategory(raw: unknown): HsmCategory | null {
   const cat = String(raw || "").toUpperCase();
@@ -469,7 +474,6 @@ function toHsmCategory(raw: unknown): HsmCategory | null {
 /** Preenche só os campos ainda vazios de `info` com os dados de um hsm/template. */
 function mergeTemplateInfo(info: TemplateInfo, hsm: any): void {
   if (!hsm) return;
-  info.hasHsm = true;
   info.name ??= pickTemplateName(hsm);
   info.category ??= toHsmCategory(hsm.category);
 }
